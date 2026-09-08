@@ -1,0 +1,24 @@
+# 依赖与缓存
+node_modules/
+.cache/
+
+# 打包/日志/本地环境
+*.tgz
+*.log
+.env
+.env.*
+
+# 调试探针产物（probe-ssr.tsx 源码保留，产物 3.8MB 不入库）
+probe-ssr.mjs
+
+# 本地项目记忆（含个人机器路径，不进公开仓库；本地需要跟踪可 git add -f）
+Claude_memory.md
+
+# 本目录作为工作沙盒运行时的元数据（分组/标注），不进公开仓库
+.myagent/
+
+# 本地开发报告（含本机路径），不进公开仓库
+output/
+
+# SSR 回归探针（本地开发工具，公开仓库不收录）
+probe-ssr.tsx

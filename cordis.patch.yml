@@ -1,0 +1,13 @@
+# dsh-myagent bundle patch: inserts one dual-face plugin row into the
+# profile roster. The node half (exports ".") runs in the host process and
+# serves /api/myagent/*; the dsh.client manifest loads the browser half.
+- insert:
+    - id: myagent
+      name: 'dsh-myagent'
+      # 宿主侧没有 "workspaces" 服务（那是浏览器半区服务名）；宿主工作空间服务是
+      # workspaceRegistry。collectRoots 有 lenient 探测与 try/catch 降级，不注入。
+      inject: [webServer, fs]
+      config:
+        # v1 只放行"已注册工作空间"根目录；spike 若确认 workspaces 服务不可用，
+        # 则只放行 dsh 启动目录。allowedRoots 为人工补充白名单。
+        allowedRoots: []

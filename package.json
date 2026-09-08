@@ -1,0 +1,102 @@
+{
+  "name": "dsh-myagent",
+  "version": "0.1.0",
+  "description": "DSH-MYAGENT — VS Code-style file tree and viewer for the dsh Web GUI (dual-half bundle)",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "file-tree",
+    "file-viewer",
+    "workspace",
+    "sidebar"
+  ],
+  "homepage": "https://github.com/qydhlhz/dsh-myagent#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qydhlhz/dsh-myagent.git"
+  },
+  "bugs": {
+    "url": "https://github.com/qydhlhz/dsh-myagent/issues"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-theme",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "npm run build:node && npm run build:client",
+    "build:node": "tsdown",
+    "build:client": "node scripts/build-client.mjs && node --check lib/client.js",
+    "watch": "tsdown --watch",
+    "test": "node --test",
+    "test:types": "tsc --noEmit",
+    "check": "npm run test:types && npm test",
+    "smoke": "node smoke.mjs",
+    "prepublishOnly": "npm run check && npm run build"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-sidebar": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-theme": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-fs": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-workspace": "^0.1.0-rc.6",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@codemirror/lang-cpp": "^6.0.3",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-go": "^6.0.1",
+    "@codemirror/lang-html": "^6.4.12",
+    "@codemirror/lang-java": "^6.0.2",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/lang-rust": "^6.0.2",
+    "@codemirror/lang-sql": "^6.10.0",
+    "@codemirror/lang-yaml": "^6.1.3",
+    "@codemirror/legacy-modes": "^6.5.3",
+    "@codemirror/theme-one-dark": "^6.1.3",
+    "codemirror": "^6.0.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
+    "@types/node": "^24.0.0",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "^18.3.7",
+    "esbuild": "^0.28.2",
+    "tsdown": "^0.22.14",
+    "typescript": "^5.5.0"
+  },
+  "license": "MIT"
+}
