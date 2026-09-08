@@ -20,5 +20,8 @@ Claude_memory.md
 # 本地开发报告（含本机路径），不进公开仓库
 output/
 
+# 开发过程审查记录（含本机路径），不进公开仓库
+review/
+
 # SSR 回归探针（本地开发工具，公开仓库不收录）
 probe-ssr.tsx
