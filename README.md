@@ -1,8 +1,9 @@
 # DSH-MYAGENT (`dsh-myagent`)
+随着dsh的0.1.5版本更新，官方内置了文件树和预览系统，本项目意在提供更方便的UI交互，整合了官方更新内容的同时提供更好的工作区管理和文件树系统，并内置尝试agent-native的交互模块。
+本项目从0.1。5版本开始更新，版本号与dsh版本号一一对应。
 
 > **MYAGENT.UI** —— 为 dsh 配置更好的工作区与文件树系统。
 > **区管家** —— 无需对话的 agent：一键维护工作区三级分类。
-> 探索 agent-native 风味交互。
 
 DeepSeek Harness（dsh）Web GUI 的双半区 bundle 插件。MyAgent 模式下，官方侧栏由 VS Code 式的工作区 + 会话 + 区文件树接管；点击文件仍由右侧栏的**官方文件预览**标签页渲染（Markdown / 代码 / 图片 / PDF / HTML / 纯文本）。
 
