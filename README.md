@@ -1,14 +1,22 @@
 # DSH-MYAGENT (`dsh-myagent`)
-随着dsh的0.1.5版本更新，官方内置了文件树和预览系统，本项目意在提供更方便的UI交互，整合了官方更新内容的同时提供更好的工作区管理和文件树系统，并内置尝试agent-native的交互模块。
-本项目从0.1。5版本开始更新，版本号与dsh版本号一一对应。
 
 > **MYAGENT.UI** —— 为 dsh 配置更好的工作区与文件树系统。
-> **区管家** —— 无需对话的 agent：一键维护工作区三级分类。
+> **区管家** —— 无需对话的 agent：一键维护工作区三级列表。
 
-DeepSeek Harness（dsh）Web GUI 的双半区 bundle 插件。MyAgent 模式下，官方侧栏由 VS Code 式的工作区 + 会话 + 区文件树接管；点击文件仍由右侧栏的**官方文件预览**标签页渲染（Markdown / 代码 / 图片 / PDF / HTML / 纯文本）。
+dsh 0.1.5 起官方内置了文件树与预览。本项目**保留官方预览**、接管左侧栏：把
+**工作区 → 分组 → 会话**三级列表与区文件树合成一块左侧面板，并提供**一键切换
+MYAGENT 模式 / 标准模式**的按钮，随时还原官方界面。内置 **区管家** —— 一个不显示对话框的
+agent：读取各对话记忆，替你维护工作区分组，标题，简介。
 
-- **宿主半区**（`lib/index.js`）：`/api/myagent/*` 文件服务，以及区管家的两个隔离 agent 会话（butler / planner）
-- **浏览器半区**（`lib/client.js`）：侧栏 UI，由 dsh 客户端模块加载器自动服务
+版本号与 dsh 一一对应（本版 **v0.1.5** ↔ dsh `0.1.5-rc`）；旧版插件会被 0.1.5 拒绝加载，**必须升级**。
+
+双半区 bundle（宿主 `lib/index.js` + 浏览器 `lib/client.js`），消费侧零第三方运行时依赖，`lib/` 已提交、装完即用：
+
+```sh
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.1.5    # 装完重启 dsh web
+```
+
+
 
 ## 功能
 
@@ -44,7 +52,7 @@ DeepSeek Harness（dsh）Web GUI 的双半区 bundle 插件。MyAgent 模式下�
   （标题退化为 `主题：进行中`，**不编造进度**）。
 
 - 上下两区独立折叠 + 可拖拽分割线，两区状态各自持久化
-- 原始模式 ↔ MyAgent 模式一键切换键（MA logo）
+- 标准模式 ↔ MyAgent 模式一键切换键（MA logo）
 - **左上角 logo 块显示 MYAGENT 字样**（仅 MyAgent 模式）：官方鲸鱼标记与 DeepSeek Harness 字标都保留，
   字标让位到 16px，右侧加「竖线 + MYAGENT」；尺寸按宿主侧栏的合法宽度区间（264–420px）定，
   **在整个区间内都放得下，不会消失**；切回标准模式恢复官方原样
