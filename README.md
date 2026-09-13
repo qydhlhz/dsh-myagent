@@ -1,5 +1,7 @@
 # DSH-MYAGENT (`dsh-myagent`)
 
+**简体中文** | [English](README.en.md)
+
 > **MYAGENT.UI** —— 为 dsh 配置更好的工作区与文件树系统。
 > **区管家** —— 无需对话的 agent：一键维护工作区三级列表。
 
@@ -15,8 +17,6 @@ agent：读取各对话记忆，替你维护工作区分组，标题，简介。
 ```sh
 dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.1.5    # 装完重启 dsh web
 ```
-
-
 
 ## 功能
 
@@ -87,7 +87,7 @@ dsh plugin --profile web add ./dsh-myagent
 dsh --profile web --dump-config   # 应出现 # == dsh-myagent 与插件行
 ```
 
-重启后在 GUI 设置 → 插件列表可见 `dsh-myagent`，侧栏出现沙盒文件树/工作沙盒面板。
+重启后在 GUI 设置 → 插件列表可见 `dsh-myagent`，侧栏出现工作区 / 区文件树面板。
 
 ## 配置
 
@@ -97,7 +97,7 @@ dsh --profile web --dump-config   # 应出现 # == dsh-myagent 与插件行
 - id: myagent
   name: 'dsh-myagent'
   config:
-    # 人工补充白名单；默认空 = 只放行"已注册工作沙盒根" + dsh 启动目录
+    # 人工补充白名单；默认空 = 只放行"已注册工作区根" + dsh 启动目录
     allowedRoots: []
     # 运行代码时使用的解释器路径（缺省自动探测）
     pythonPath: 'python'          # 或 'C:\Python312\python.exe'
@@ -124,7 +124,7 @@ npm run smoke     # bundle 契约 + patch 合成冒烟
 > 追加后服务端仍返回追加前那份，**重启进程后**才带上标记。所以"改客户端半区只要刷新页面"
 > 是错的 —— `npm run build` 之后必须重启 `dsh web`。
 
-测试分两层：`test/*.ts` 覆盖宿主半区与纯函数；`test/client-bundle.test.ts` 直接加载**打好的 `lib/client.js`**，用复刻 dsh "声明账本"契约的槽位注册表桩跑 `apply()`，锁死插件加载期不再抛 `slot ... is not declared`，并服务端渲染左栏组件确认真的渲染出工作沙盒 / 沙盒文件两区。
+测试分两层：`test/*.ts` 覆盖宿主半区与纯函数；`test/client-bundle.test.ts` 直接加载**打好的 `lib/client.js`**，用复刻 dsh "声明账本"契约的槽位注册表桩跑 `apply()`，锁死插件加载期不再抛 `slot ... is not declared`，并服务端渲染左栏组件确认真的渲染出工作区 / 区文件树两区。
 
 ## 目录结构
 
