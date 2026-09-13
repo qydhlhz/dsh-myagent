@@ -1,18 +1,19 @@
 // src/client/ErrorBoundary.tsx — 槽位注册组件的局部渲染错误边界。
 // 背景（根因修复配套）：槽位组件渲染抛错会让 slots supervisor abdicate 整个注册
 // （本项目曾因拖拽重排刷新后 host 投影缺 sessionIds，渲染崩溃 → sidebar.workspaces
-// 回退原版 ui-workspace：沙盒文件区消失、侧栏复原）。因此 Composed / DetailsComposite
+// 回退原版 ui-workspace：区文件树消失、侧栏复原）。因此 Composed / DetailsComposite
 // 各包一层 ErrorBoundary：此后任何渲染错误只降级为局部占位（label + 重试按钮），
 // 不再拖垮整个槽位注册。
 // 降级占位直接展示触发错误的 message（label + "组件渲染出错：" + 消息），
 // 不用翻 console 即可从 UI 读出失败原因。
 import React from "react";
+import { RADIUS } from "./ui-kit.ts";
 
 export interface ErrorBoundaryProps {
   // children 声明为可选：client.ts 以 React.createElement(ErrorBoundary, { label }, child)
   // 调用（rest 参数形式的 children 不参与 props 对象的类型校验），可选可让该调用过 tsc。
   children?: React.ReactNode;
-  /** 降级占位文案中的组件名，如 "工作沙盒列表" / "沙盒文件查看器"。 */
+  /** 降级占位文案中的组件名，如 "工作区列表" / "区文件树查看器"。 */
   label: string;
 }
 
@@ -81,8 +82,9 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             style={{
               cursor: "pointer",
               padding: "4px 12px",
-              borderRadius: 6,
-              border: "1px solid var(--dsw-alias-border-l2)",
+              // 对齐官方 Button size="sm" 的 14px 圆角（此前 6px 明显偏方）。
+              borderRadius: RADIUS.control,
+              border: "0.5px solid var(--dsw-alias-border-l3)",
               background: "var(--dsw-alias-bg-layer-1)",
               color: "var(--dsw-alias-label-primary)",
               fontSize: 13,

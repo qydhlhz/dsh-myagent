@@ -8,6 +8,7 @@ import {
   setWorkspaceBrief,
   setGroupBrief,
   setSessionBrief,
+  setSessionMarker,
   setLastPlan,
   setLastOrganizedAt,
   deriveBriefFromTitle,
@@ -128,4 +129,35 @@ test("saveAnnotations 写回并返回新版本", async () => {
   assert.equal(written.path, ANNOTATIONS_PATH);
   assert.equal(written.expectedVersion, "v1");
   assert.ok(JSON.parse(written.content).version === 1);
+});
+
+// —— marker：区管家"有新对话才更新"的判据 ——
+
+test("setSessionMarker 只写 marker，保留已有标题与简介", () => {
+  let data = emptyAnnotations();
+  data = setSessionBrief(data, "s1", "meta分析：已检索完文献", "检索完文献并整理成表");
+  data = setSessionMarker(data, "s1", "ev:305");
+  assert.equal(data.sessions.s1.marker, "ev:305");
+  assert.equal(data.sessions.s1.title, "meta分析：已检索完文献");
+  assert.equal(data.sessions.s1.brief, "检索完文献并整理成表");
+});
+
+test("setSessionMarker 对没有标注的会话也能建立条目", () => {
+  const data = setSessionMarker(emptyAnnotations(), "s2", "sz:1024");
+  assert.equal(data.sessions.s2.marker, "sz:1024");
+  assert.equal(data.sessions.s2.brief, "");
+});
+
+test("setSessionBrief 不会把已有 marker 抹掉", () => {
+  let data = setSessionMarker(emptyAnnotations(), "s1", "ev:7");
+  data = setSessionBrief(data, "s1", "新标题：新进度", "新的简介");
+  assert.equal(data.sessions.s1.marker, "ev:7");
+  assert.equal(data.sessions.s1.title, "新标题：新进度");
+});
+
+test("marker 能过一遍序列化/解析（annotations.json 往返）", () => {
+  const data = setSessionMarker(setSessionBrief(emptyAnnotations(), "s1", "t：p", "b"), "s1", "ev:42");
+  const back = parseAnnotations(serializeAnnotations(data));
+  assert.equal(back.sessions.s1.marker, "ev:42");
+  assert.equal(back.sessions.s1.title, "t：p");
 });

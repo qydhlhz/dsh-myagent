@@ -1,15 +1,18 @@
 {
   "name": "dsh-myagent",
-  "version": "0.1.0",
-  "description": "DSH-MYAGENT — VS Code-style file tree and viewer for the dsh Web GUI (dual-half bundle)",
+  "version": "0.1.5",
+  "description": "DSH-MYAGENT (MYAGENT.UI) — an agent-native workspace, session and file-tree sidebar for the dsh Web GUI, plus a headless organizer agent that maintains session briefs, titles and groups",
   "keywords": [
     "dsh",
     "deepseek-harness",
     "plugin",
+    "agent",
+    "agent-native",
     "file-tree",
-    "file-viewer",
     "workspace",
-    "sidebar"
+    "session",
+    "sidebar",
+    "organizer"
   ],
   "homepage": "https://github.com/qydhlhz/dsh-myagent#readme",
   "repository": {
@@ -47,7 +50,8 @@
       "inject": [
         "@deepseek-ai/dsh-client-runtime",
         "@deepseek-ai/dsh-client-ui-theme",
-        "@deepseek-ai/dsh-client-ui-sidebar"
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
       ],
       "platform": "web"
     }
@@ -75,21 +79,6 @@
     "react": "^18.2.0"
   },
   "devDependencies": {
-    "@codemirror/lang-cpp": "^6.0.3",
-    "@codemirror/lang-css": "^6.3.1",
-    "@codemirror/lang-go": "^6.0.1",
-    "@codemirror/lang-html": "^6.4.12",
-    "@codemirror/lang-java": "^6.0.2",
-    "@codemirror/lang-javascript": "^6.2.5",
-    "@codemirror/lang-json": "^6.0.2",
-    "@codemirror/lang-markdown": "^6.5.2",
-    "@codemirror/lang-python": "^6.2.1",
-    "@codemirror/lang-rust": "^6.0.2",
-    "@codemirror/lang-sql": "^6.10.0",
-    "@codemirror/lang-yaml": "^6.1.3",
-    "@codemirror/legacy-modes": "^6.5.3",
-    "@codemirror/theme-one-dark": "^6.1.3",
-    "codemirror": "^6.0.2",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
     "@types/node": "^24.0.0",
     "@types/react": "~18.3.1",

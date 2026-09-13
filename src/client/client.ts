@@ -1,35 +1,81 @@
-// src/client/client.ts — 浏览器半区正式入口（Branch A：shadow sidebar.workspaces + details）。
-// 挂载姿势（spike 实测，官方 ui-workspace 同款）：ctx.slots.inject 声明感知后 register——
-// sidebar.workspaces 是 single 槽、最低优先级渲染，priority: -100 把 ui-workspace（priority 0）
-// shadow 掉，所以这里必须自渲染工作沙盒区/会话列表（WorkspaceBrowser）。
+// src/client/client.ts — 浏览器半区正式入口（dsh 0.1.5 槽位契约版）。
 //
-// Round 2：查看器从覆盖式抽屉改为 details 列并行分割（替代覆盖式抽屉）：
-//   - 平台事实（已核实）：布局三栏 sidebar | conversation | details；details 右栏默认关闭
-//     （0px），ctx.layout.openDetails() 打开为 360px，AppFrame 渲染右侧 DragHandle 可拖宽。
-//     details 槽为 single/scope:session，被 ui-conversation 的 DetailsPanel（priority 0）占用；
-//     single 槽最低优先级渲染 → 这里以 priority: -100 注册 details，把右栏内容替换为我们的
-//     查看器（DetailsComposite + FileViewerPanel），列宽/关闭拖拽免费获得。
-//   - 取舍记录：ui-conversation 的 DetailsPanel（工具调用检查面板）被 shadow 掉——工具调用的
-//     JSON 详情不再出现在右栏；轨迹视图 conversation.view 走会话内渲染，不受影响。
-//     打开文件状态（root/path）从 Composed 提升到模块级 viewer-store（src/client/viewer-store.ts），
-//     sidebar（Composed）与 details（DetailsComposite）两处消费。
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+// 【0.1.5 迁移要点（本次更新的根因）】
+// dsh 0.1.5-rc 把"平铺槽位表"换成了**声明账本树**：一个槽位只有被某个父条目的
+// children 表声明过才存在，`ctx.slots.register` 对未声明的槽位**直接抛错**
+// （"slot X is not declared (a parent entry's children table must declare it)"），
+// 而注册进"已被声明"的槽位必须走 `ctx.slots.inject(key, () => register(...))`——
+// inject 会在声明已存在时同步执行、否则挂到声明提交后再执行，并在声明塌陷时自动撤销。
+// 因此：**任何 slots.register 都必须嵌在 slots.inject 里**，直连注册会在插件加载期炸掉
+// 整个 loader 条目（本插件此前的报错）。
+//
+// 槽位归属（源码实证，安装包 0.1.5-rc.2）：
+//   - ui-sidebar 的 `sidebar` 条目声明 sidebar.workspaces / sidebar.settings /
+//     sidebar.footer.action / sidebar.brand.* / sidebar.panellist。
+//   - ui-settings-general 的 `sidebar.settings` 条目声明 settings.trigger 等。
+//
+// 【左上角 logo 块 = MYAGENT 字样的落点】0.1.5-rc 起 ui-sidebar 把 logo 行拆成
+// sidebar.brand.mark（官方 ui-brand-official 填鲸鱼 FishLogo）与 sidebar.brand.name
+// （填 BrandWordmark 字标）两个 single 子槽。本插件在 **name** 槽上用 priority -100 顶掉
+// 官方字标，自己渲染「官方字标（17px）+ 竖线 + MYAGENT」，鲸鱼不动（见 MyAgentBrand.tsx）。
+//
+// 【布局：文件树留在左栏，预览交给官方右栏】
+// 0.1.5 删掉了 `details` 槽与 ctx.layout.openDetails/closeDetails，右栏改由 ui-sidebar-right
+// 的标签页系统接管（ctx.sidebarRight 导航控制器 + ctx.sidebarRightTabs 类型注册表），并自带
+// 官方文件预览（@deepseek-ai/dsh-client-ui-sidebar-documentpreview，Markdown/代码/图片/PDF/
+// HTML/纯文本渲染器）。
+// 本插件**不再自带查看器**（旧 FileViewerPanel/CsvTable 已删）：左侧树点击文件 →
+// ctx.sidebarRight.openResource(会话作用域 file 地址) → 官方预览标签页接管渲染。
+// 官方预览只认 session 作用域地址（canOpen: scope === "session"），故地址必须带会话，
+// 见 file-address.ts 与 tree-utils.ts 的 sessionForRoot。
+//
+// 左侧栏维持 myagent 原布局：priority -100 压掉官方 ui-workspace 的 sidebar.workspaces，
+// 自渲染 WorkspaceBrowser + FileTree（上下分区 + 拖拽分割 + 独立折叠）。
+//
+// 【取消官方右栏文件树】
+// MyAgent 模式下用 extension 档**接管 kind "files"**（官方 ui-sidebar-files 是 builtin 档），
+// 使官方文件树从 guide capsule 与标签类型表里消失（文件浏览统一由左栏承担）。
+// 只有类型定义被接管，**文件预览是另一个 kind（"text"），照旧工作**。退出 MyAgent 模式即恢复。
+// 详见 filesShadowDefinition 的注释。
+//
+// 【图片预览：拖动平移 + 滚轮缩放】
+// 官方预览把"渲染器"做成了公开注册表 ctx.documentPreviews，extension 档优先于内建实现。
+// 本插件只注册**图片扩展名**的渲染器（详见 image-panzoom.tsx），其余渲染器全归官方。
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { SidebarComposite } from "./SidebarComposite.tsx";
-import { FileViewerPanel } from "./FileViewerPanel.tsx";
 import { Api } from "./api.ts";
-import { resolveRoot, type SessionsSnapshot, type WorkspacesSnapshot } from "./tree-utils.ts";
-import { closeViewer, openViewer, useViewerState } from "./viewer-store.ts";
+import {
+  resolveRoot,
+  resolveAbsPath,
+  sessionForRoot,
+  type SessionsSnapshot,
+  type WorkspacesSnapshot,
+} from "./tree-utils.ts";
+import { fileAddressFor } from "./file-address.ts";
+import { IMAGE_PANZOOM_ID, imagePanZoomDefinition } from "./image-document.ts";
+import { ImagePanZoom } from "./image-panzoom.tsx";
+import { clearActiveRoot, useActiveRoot } from "./active-root-store.ts";
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
 import { ModeKeyButton } from "./ModeKeyButton.tsx";
+import { MyAgentBrandName } from "./MyAgentBrand.tsx";
 import { IconOnlySettingsTrigger } from "./IconOnlySettingsTrigger.tsx";
 import { ensureSettingsCompactCss } from "./settings-compact.ts";
 import { getMode, subscribeMode } from "./mode-store.ts";
+import { FONT_SECONDARY } from "./ui-kit.ts";
 
-// 客户端插件服务依赖（镜像 ui-workspace 的 inject 声明）：slots 在 apply 期使用；
-// sessions/workspaces 在动作工厂（点击时）使用；layout（LayoutController：
-// toggleSidebar/openDetails/closeDetails）由 ui-layout 提供，打开/关闭右栏用（ui-sidebar
-// 同样 inject "layout" 调 ctx.layout.toggleSidebar）。
-const inject = ["slots", "layout", "sessions", "workspaces"] as const;
+// 客户端插件服务依赖：slots 注册槽位；sessions/workspaces 推导工作区根与会话；
+// sidebarRight 打开右栏预览标签页（导航控制器）；sidebarRightTabs 用于接管官方文件树类型
+// （见 registerEnhancements 里"取消官方文件树"一段）。
+// layout 已不需要：details 槽在 0.1.5 中删除。
+const inject = ["slots", "sessions", "workspaces", "sidebarRight", "sidebarRightTabs"] as const;
+
+/**
+ * 官方右栏文件树的 kind（@deepseek-ai/dsh-client-ui-sidebar-files 注册的**页面**类型）。
+ * 它带一个 guide capsule，是"工作区文件"页的唯一入口。
+ */
+const OFFICIAL_FILES_KIND = "files";
+/** 接管官方文件树所用的类型 id（类型系统里全局唯一，用包名风格）。 */
+const FILES_SHADOW_ID = "dsh-myagent/files-removed";
 
 // v0.2.0：增强层注册 disposer 管理——原始模式注销、MyAgent 模式注册。
 let enhancementDisposers: Array<() => void> = [];
@@ -56,10 +102,7 @@ function buildActions(ctx: any) {
       const sessionId = await ctx.sessions.create({ workspaceId: target });
       ctx.sessions.open(sessionId);
     },
-    // 新建工作沙盒（Round 3）：宿主原生目录选择器选一个已存在目录 → workspace.create 注册。
-    // wire payload 已核实（dsh-host-apiproxy lib/types/api/workspace.schema.d.ts）：
-    // workspace.create 请求只有 { path: string }（title 缺省，由 registry 用路径 basename 命名）。
-    // pickDirectory() 用户取消返回 null（dsh-client-runtime client.js 注释），静默跳过。
+    // 新建工作区：宿主原生目录选择器选一个已存在目录 → workspace.create 注册。
     addWorkspace: async () => {
       const path = await ctx.workspaces.pickDirectory();
       if (path === null) return; // 用户取消，静默
@@ -83,37 +126,121 @@ function buildActions(ctx: any) {
     archiveSession: async (sessionId: string) => {
       await ctx.workspaces.archiveSession(sessionId);
     },
-    // 拖拽排序（Round 2）：与 ui-workspace 语义一致——beforeWorkspaceId/beforeSessionId
-    // 省略（undefined）时追加到末尾（runtime client.js insertBefore 注释：omitted appends）。
+    // 拖拽排序：beforeWorkspaceId/beforeSessionId 省略（undefined）时追加到末尾
+    // （runtime client.js insertBefore 注释：omitted appends）。
     insertWorkspaceBefore: async (workspaceId: string, beforeWorkspaceId?: string) => {
       await ctx.workspaces.insertBefore(workspaceId, beforeWorkspaceId);
     },
     insertSessionBefore: async (workspaceId: string, sessionId: string, beforeSessionId?: string) => {
       await ctx.workspaces.insertSessionBefore(workspaceId, sessionId, beforeSessionId);
     },
-    // 右栏（details）开合：FileTree onOpenFile → openDetails；面板关闭 → closeDetails。
-    openDetails: () => {
-      ctx.layout.openDetails();
-    },
-    closeDetails: () => {
-      ctx.layout.closeDetails();
-    },
-    // v1 未提供 UI 入口的动作（留注释，后续补齐）：
-    // forkSession / searchSessions / searchResultLimit —— v1 精简，未实现。
   });
+}
+
+/**
+ * 在右侧栏用**官方预览**打开一个工作区内的文件（FileTree onOpenFile 的落点）。
+ *
+ * 不带 options.kind：让类型注册表按 patterns 排名认领 → 官方文件预览（fallback 档）接管。
+ * 同一地址第二次打开只是聚焦原标签页（资源标签页按 (kind, contentId) 去重）。
+ *
+ * @param sessionId - 地址归属会话；宿主按地址里的会话解析相对路径，必须与 cwd 同属一个根。
+ * @param cwd - 该会话的工作区根。
+ * @param absPath - 待打开的绝对路径。
+ */
+function openFileInPreview(ctx: any, sessionId: string, cwd: string, absPath: string): void {
+  try {
+    ctx.sidebarRight.openResource(fileAddressFor(sessionId, cwd, absPath));
+  } catch (err) {
+    // 没有挂载中的会话面板时 openResource 会抛（"no seat mounted"）；点击不应炸掉左栏。
+    console.warn("[dsh-myagent] cannot open preview tab", err);
+  }
+}
+
+/**
+ * 接管官方右栏文件树用的类型定义（MyAgent 模式下才注册）。
+ *
+ * 机制：类型注册表规定"一个 kind 至多一个 builtin + 一个 extension，extension 在档"，
+ * 所以用 extension 档注册**同 kind** 就能把官方文件树（builtin）压下去——
+ * 注册表的 cached / guideEntries 都取自 `active()`（只有在档类型），于是
+ *   - guide 页不再出现"工作区文件"capsule（唯一入口消失）；
+ *   - 标签类型表（标签栏 "+" 用）里也不再列出它。
+ * 注意**故意不给 patterns**：这是页面类型，不认领任何地址 —— 官方文件预览
+ * （kind "text"、fallback 档、认领 dsh-resource://file/**）与它不同 kind，完全不受影响。
+ * 退出 MyAgent 模式时本注册被 dispose，官方文件树原样恢复。
+ */
+function filesShadowDefinition() {
+  return {
+    id: FILES_SHADOW_ID,
+    kind: OFFICIAL_FILES_KIND,
+    priority: "extension",
+    // title 只在 placeTab 打开该页时用到；该页已无入口，给个可读名字即可。
+    title: () => "工作区文件",
+    // 没有 guide 字段 = 不上 guide 页；没有 patterns = 不参与任何地址认领。
+  };
 }
 
 function registerEnhancements(ctx: any) {
   if (enhancementDisposers.length > 0) return;
   const actions = buildActions(ctx);
+
+  // 左上角 logo 块：官方把这块拆成了两个子槽位（sidebar.brand.mark = 鲸鱼，
+  // sidebar.brand.name = DeepSeek Harness 字标，由 ui-brand-official 填）。这里只顶掉
+  // **name** 槽（priority -100 压官方条目的 0），在槽内渲染「官方字标 + 竖线 + MYAGENT」；
+  // 鲸鱼标记不动。挂在增强层上 → 切回标准模式即撤销、官方字标原样恢复。详见 MyAgentBrand.tsx。
   enhancementDisposers.push(
-    ctx.slots.register({ name: "sidebar.workspaces", priority: -100, inject: actions }, Composed),
-  );
-  enhancementDisposers.push(
-    ctx.slots.register(
-      { name: "details", priority: -100, inject: () => ({ closeDetails: () => ctx.layout.closeDetails() }) },
-      DetailsComposite,
+    ctx.slots.inject("sidebar.brand.name", () =>
+      ctx.slots.register({ name: "sidebar.brand.name", priority: -100 }, MyAgentBrandName),
     ),
+  );
+
+  // 左栏：等 sidebar.workspaces 被 ui-sidebar 的 sidebar 条目声明后再注册。
+  // priority -100 压掉官方 ui-workspace（priority 0）；single 槽"最低优先级渲染"。
+  enhancementDisposers.push(
+    ctx.slots.inject("sidebar.workspaces", () =>
+      ctx.slots.register({ name: "sidebar.workspaces", priority: -100, inject: actions }, Composed),
+    ),
+  );
+
+  // 取消官方右栏文件树：extension 档接管 kind "files"（MyAgent 模式下）。
+  enhancementDisposers.push(
+    ctx.effect(() => ctx.sidebarRightTabs.register(filesShadowDefinition()), "dsh-myagent: hide official files type"),
+  );
+  // 接管后 body 按"在档类型的 id"派发（TabSlot 用 definition.id 作 entryKey）。
+  // 老会话里可能已经开着官方文件树标签页，这里给它一个说明性占位，而不是让右栏显示
+  // "这类内容还没有可用的查看方式"（那会让人以为坏了）。
+  enhancementDisposers.push(
+    ctx.slots.inject("sidebar.right.pane.tab", () =>
+      ctx.slots.register({ name: "sidebar.right.pane.tab", key: FILES_SHADOW_ID }, FilesRemovedBody),
+    ),
+  );
+
+  // 图片预览：只接管图片扩展名的**文档渲染器**，加鼠标拖动平移 + 滚轮缩放。
+  //
+  // 两段注册，分别挂在自己的生命周期上：
+  //  1) body 挂 sidebar.right.tab.document（keyed，key = 渲染器 id）。该槽由官方预览的标签
+  //     条目声明，所以"槽位存在"本身就说明官方预览在场；其余渲染器一个都不碰。
+  //  2) 渲染器定义要写进官方的 ctx.documentPreviews 注册表。**不能**用 ctx.get() 取——cordis
+  //     里未在 inject 声明的服务取不到（实测返回 undefined）；也**不能**把 documentPreviews
+  //     写进本插件的 inject 数组——那样官方预览一旦被禁用，服务永不出现，本插件（包括左栏
+  //     文件树）就整个不激活了。正确姿势是动态注入 `ctx.inject([...], scope => ...)`：
+  //     服务出现时才回调，缺席则本段永不执行，插件其余部分照常。
+  enhancementDisposers.push(
+    ctx.slots.inject("sidebar.right.tab.document", () =>
+      ctx.slots.register({ name: "sidebar.right.tab.document", key: IMAGE_PANZOOM_ID }, ImagePanZoom),
+    ),
+  );
+  const imageRendererHandle = ctx.inject(["documentPreviews"], (scope: any) => {
+    scope.effect(
+      () => scope.documentPreviews.register(imagePanZoomDefinition()),
+      "dsh-myagent: image pan/zoom renderer",
+    );
+  });
+  // ctx.inject 的返回值在 cordis 里是 fiber（可 dispose），不是普通函数；两种形态都兜住，
+  // 否则模式切换时 unregisterEnhancements 会在它上面抛错。
+  enhancementDisposers.push(
+    typeof imageRendererHandle === "function"
+      ? imageRendererHandle
+      : () => imageRendererHandle?.dispose?.(),
   );
 }
 
@@ -128,10 +255,9 @@ function syncEnhancements() {
   else unregisterEnhancements();
 }
 
-
 function apply(ctx: any) {
   appliedCtx = ctx;
-  // 增强层（沙盒文件树/查看器）：按模式注册；启动默认 MyAgent。
+  // 增强层（区文件树）：按模式注册；启动默认 MyAgent。
   syncEnhancements();
   subscribeMode(syncEnhancements);
 
@@ -153,158 +279,80 @@ function apply(ctx: any) {
 
 // 组合组件：槽位标准套件（useSessions/useWorkspaces/wide/expandSidebar）与 inject 动作
 // 会作为 props 展开进来。root/api 提升到这一层：inject 工厂不建 api（api 依赖 root，
-// root 从会话/工作沙盒推导，只能组件层算）。打开文件改走 viewer-store（模块级）：
-// openViewer(api.root, path) + props.openDetails()，details 槽的 DetailsComposite 消费
-// 同一状态渲染 FileViewerPanel（同一 root → 同一 Api 语义，read 拿到的版本号才能用于
-// write 的防覆盖守卫）。
-// 错误边界（根因修复配套）：边界包在 hooks 之上，ComposedInner 里任何渲染错误（含
-// resolveRoot 对投影字段的访问）都只降级为局部占位 + 重试，不再让 slots supervisor
-// abdicate 整个 sidebar.workspaces 注册（原：渲染抛错 → 左栏回退原版）。
+// root 从会话/工作区推导，只能组件层算）。
+// 错误边界（根因修复配套）：边界包在 hooks 之上，ComposedInner 里任何渲染错误都只降级为
+// 局部占位 + 重试，不再让 slots supervisor abdicate 整个 sidebar.workspaces 注册。
 function Composed(props: any) {
   return React.createElement(
     ErrorBoundary,
-    { label: "工作沙盒列表" },
+    { label: "工作区列表" },
     React.createElement(ComposedInner, props),
   );
 }
 
 function ComposedInner(props: any) {
-  const sessions = props.useSessions((s: SessionsSnapshot) => s);
-  const workspaces = props.useWorkspaces((s: WorkspacesSnapshot) => s);
-  const root = useMemo(() => resolveRoot(sessions, workspaces), [sessions, workspaces]);
-  // root 变化（切换工作沙盒）时关闭查看器，防止上一个工作沙盒的查看器残留。
-  useEffect(() => {
-    closeViewer();
-  }, [root]);
+  const sessions: SessionsSnapshot = props.useSessions((s: SessionsSnapshot) => s);
+  const workspaces: WorkspacesSnapshot = props.useWorkspaces((s: WorkspacesSnapshot) => s);
+  // 文件树根：用户点"区"标签显式指定的优先；没指定时才回落到"当前会话所属工作区"。
+  // 显式选择还要校验该区仍存在（工作区可能被删），否则同样回落到推导值。
+  const manualRoot = useActiveRoot();
+  const root = useMemo(() => {
+    const derived = resolveRoot(sessions, workspaces);
+    if (manualRoot !== null && workspaces.items.some((w) => w.path === manualRoot)) return manualRoot;
+    return derived;
+  }, [manualRoot, sessions, workspaces]);
   const api = useMemo(() => (root === null ? null : new Api(root)), [root]);
+  const ctx = appliedCtx;
+
+  // 切换会话时放弃显式选择：让文件树重新跟着会话走（点区标签的意图只属于"当前这一次"）。
+  const currentSession = sessions.current;
+  const lastSession = useRef<string | undefined>(currentSession);
+  useEffect(() => {
+    if (lastSession.current === currentSession) return;
+    lastSession.current = currentSession;
+    clearActiveRoot();
+  }, [currentSession]);
+
+  // 打开文件 → 官方右栏预览标签页。地址里的会话必须与 api.root 同属一个根，
+  // 否则宿主会按另一个会话的根去解析相对路径（读错文件）。
   const onOpenFile = useCallback(
     (p: string) => {
-      if (api === null) return;
-      openViewer(api.root, p);
-      props.openDetails?.();
+      if (api === null || ctx === null) return;
+      const target = sessionForRoot(sessions, workspaces, api.root);
+      if (target === null) {
+        console.warn("[dsh-myagent] no session belongs to workspace", api.root);
+        return;
+      }
+      openFileInPreview(ctx, target.sessionId, target.cwd, resolveAbsPath(api.root, p));
     },
-    [api, props],
+    [api, ctx, sessions, workspaces],
   );
   return React.createElement(SidebarComposite, { ...props, api, onOpenFile });
 }
 
-// details 槽（Round 2）：以 priority: -100 覆盖 ui-conversation 的 DetailsPanel（priority 0）。
-// DetailsComposite 读 viewer-store：有 path → FileViewerPanel；无 → 空态（details 列保持
-// 打开显示占位，与原生 DetailsPanel 空态一致）。inject 提供 closeDetails（面板关闭按钮）。
-// 错误边界同上：任何渲染错误只降级局部占位。
-// details 槽（Round 2）：以 priority: -100 覆盖 ui-conversation 的 DetailsPanel（priority 0）。
-// DetailsComposite 读 viewer-store：有 path → FileViewerPanel；无 → 空态（details 列保持
-// 打开显示占位，与原生 DetailsPanel 空态一致）。inject 提供 closeDetails（面板关闭按钮）。
-// 错误边界同上：任何渲染错误只降级局部占位。
-//
-// 打开文件时把 details 列加宽（用户反馈：右侧查看栏默认/最大宽度太小）：
-// 宿主三栏是 grid（非 flex），直接在挂载后改写 grid-template-columns，
-// 让查看器获得比默认 360px / 上限 520px 更宽的可视区域。
-function applyHalfSplit(panelEl: HTMLElement | null) {
-  if (!panelEl) return;
-  let el: HTMLElement | null = panelEl;
-  while (el) {
-    const parent: HTMLElement | null = el.parentElement;
-    if (!parent) break;
-    const parentStyle = getComputedStyle(parent);
-    if (parentStyle.display === "grid") {
-      const viewport = parent.clientWidth || window.innerWidth;
-      const cols = parentStyle.gridTemplateColumns.trim().split(/\s+/);
-      const sidebar = parseFloat(cols[0] ?? "") || 280;
-      const minCenter = 360;
-      const maxDetails = Math.max(360, viewport - sidebar - minCenter);
-      const preferred = Math.min(880, Math.max(560, Math.round(viewport * 0.45)));
-      const details = Math.min(preferred, maxDetails);
-      const center = Math.max(minCenter, viewport - sidebar - details);
-      parent.style.gridTemplateColumns = `${sidebar}px ${center}px ${details}px`;
-      parent.removeAttribute("data-details-collapsed");
-      break;
-    }
-    if (
-      parentStyle.display.includes("flex") &&
-      parent.children.length > 1 &&
-      el.offsetWidth < parent.clientWidth - 1
-    ) {
-      // 旧版布局为 flex 时的兼容分支，保持原来的 1:1 对分。
-      el.style.flex = "1 1 0%";
-      el.style.width = "auto";
-      el.style.maxWidth = "none";
-      el.style.minWidth = "0";
-      const prev = el.previousElementSibling as HTMLElement | null;
-      if (prev && prev.parentElement === parent) {
-        const prevStyle = getComputedStyle(prev);
-        // 不覆盖固定宽度侧栏；只把看起来是弹性列的相邻列也设为均分。
-        if (prevStyle.flexGrow !== "0" || prevStyle.flexShrink !== "0") {
-          prev.style.flex = "1 1 0%";
-          prev.style.minWidth = "0";
-        }
-      }
-      break;
-    }
-    el = parent;
-  }
-}
-
-function DetailsComposite(props: any) {
+/**
+ * 被接管的官方文件树标签页的占位内容。
+ *
+ * 只在"老会话里已经开着官方文件树标签页"时可见（新会话里该页已无入口）。
+ * 一句话说明去哪儿找文件树，避免右栏出现语义错误的"无法查看此类内容"提示。
+ */
+function FilesRemovedBody() {
   return React.createElement(
-    ErrorBoundary,
-    { label: "沙盒文件查看器" },
-    React.createElement(DetailsCompositeInner, props),
-  );
-}
-
-function DetailsCompositeInner(props: any) {
-  const { root, path } = useViewerState();
-  // 稳定 api 实例：details 槽常驻挂载，AppFrame 在布局变更（details 分割条拖拽、
-  // sidebar 拖拽、resize）时整体重渲染，若内联 new Api(root) 每次渲染重建实例，
-  // FileViewerPanel 的 reload effect 会把 api 当作依赖重放 → 拖拽中重载文件、
-  // 清掉未保存草稿。useMemo 让 api 只在 root 变化时重建。
-  const api = useMemo(() => (root === null ? null : new Api(root)), [root]);
-  const rootRef = useRef<HTMLDivElement>(null);
-  // 打开文件时（path 非空且挂载后）把右栏调整为与对话 1:1。
-  useLayoutEffect(() => {
-    if (path !== null) applyHalfSplit(rootRef.current);
-  }, [path]);
-  const empty = React.createElement(
     "div",
     {
       style: {
-        width: "100%",
-        height: "100%",
-        minWidth: 0,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        height: "100%",
         padding: 16,
-        fontSize: 13,
+        fontSize: FONT_SECONDARY,
+        lineHeight: 1.6,
         textAlign: "center",
         color: "var(--dsw-alias-label-secondary)",
-        background: "var(--dsw-alias-bg-layer-1)",
-        borderLeft: "1px solid var(--dsw-alias-border-l2)",
-        boxSizing: "border-box",
       },
     },
-    "从左侧沙盒文件树打开文件",
-  );
-  const viewer = root === null || path === null
-    ? empty
-    : React.createElement(FileViewerPanel, {
-        // key=path：path 变化强制重挂载，在途 reload/save 完成回调落在已卸载实例上
-        // （React 18 无害 no-op），根除"旧文件内容串到新文件"的竞态。
-        key: path,
-        // 上面空态早退已保证 root !== null → api 非空；! 仅收窄联合类型，
-        // 传的仍是 useMemo 缓存的同一实例（不是每渲染新建）。
-        api: api!,
-        path,
-        onClose: () => {
-          closeViewer();
-          props.closeDetails?.();
-        },
-      });
-  return React.createElement(
-    "div",
-    { ref: rootRef, style: { width: "100%", height: "100%", minWidth: 0 } },
-    viewer,
+    "官方文件树已在 MyAgent 模式中隐藏，请使用左侧的「区文件树」浏览文件。",
   );
 }
 

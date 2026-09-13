@@ -1,4 +1,4 @@
-// src/client/group-store.ts — 工作沙盒内聊天框分组的数据模型、纯函数与读写封装。
+// src/client/group-store.ts — 工作区内聊天框分组的数据模型、纯函数与读写封装。
 import { Api } from "./api.ts";
 import type { ApiError } from "./api.ts";
 
@@ -83,7 +83,7 @@ export function visibleSessionsForGroup(
   }
   const group = data.groups.find((g) => g.id === groupId);
   if (!group) return [];
-  // 命名分组内按 group.sessionIds 的顺序展示，而不是按工作沙盒全局顺序。
+  // 命名分组内按 group.sessionIds 的顺序展示，而不是按工作区全局顺序。
   // 这样同一个分组内的对话才能通过调整 sessionIds 顺序实现上移/下移。
   return group.sessionIds.filter((id) => workspaceSessionIds.includes(id));
 }

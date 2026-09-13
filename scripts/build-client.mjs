@@ -6,8 +6,8 @@
 // PLATFORM_MODULES）。@deepseek-ai/dsh-client-ui-primitives 同样在 PLATFORM_MODULES 里
 // （宿主编译时带真实 CSS 类名与 token 样式；npm 包本体是 CSS stub，打进 bundle 会得到
 // 无样式组件），故一并 external——与官方 dsh-client-ui-workspace 的集成方式一致。
-// 代码高亮走 CodeMirror 6（含语言包），全部打进 bundle；FileViewerPanel 按扩展名
-// 选择语言扩展，控制体积。
+// 也正因 primitives 走宿主模块表，插件的 devDependency 存根只影响类型（0.1.5 新增的
+// FileTypeIcon/classifyFileType 在存根里没有），运行时由宿主提供，见 src/client/file-icon.tsx。
 // 注意：npm run watch（tsdown --watch）只盯 node 半区；client 半区由
 // npm run build:client 手动触发。
 import { mkdirSync } from "node:fs";

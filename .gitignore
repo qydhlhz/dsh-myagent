@@ -25,3 +25,6 @@ review/
 
 # SSR 回归探针（本地开发工具，公开仓库不收录）
 probe-ssr.tsx
+
+# brainstorming 可视化对照会话产物（本地设计过程，不进公开仓库）
+.superpowers/

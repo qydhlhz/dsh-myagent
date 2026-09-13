@@ -1,6 +1,6 @@
-// src/client/annotation-store.ts — 工作沙盒内“一句话标注”的数据模型、纯函数与读写封装。
+// src/client/annotation-store.ts — 工作区内“一句话标注”的数据模型、纯函数与读写封装。
 // 对应设计文档：docs/superpowers/specs/2026-08-16-sandbox-organizer-design.md
-// 标注权威副本始终在 `<工作沙盒根>/.myagent/annotations.json`，UI 直接读写；
+// 标注权威副本始终在 `<工作区根>/.myagent/annotations.json`，UI 直接读写；
 // 常驻子 agent 只消费同步注入的摘要视图。
 import { Api } from "./api.ts";
 import type { ApiError } from "./api.ts";
@@ -19,6 +19,11 @@ export interface GroupAnnotation extends AnnotationRecord {
 
 export interface SessionAnnotation extends AnnotationRecord {
   title?: string;
+  /**
+   * 上次总结时宿主给的会话持久化标记（`ev:<事件数>` / `sz:<字节数>`）。
+   * 区管家用它判断"自上次总结之后这个对话有没有新内容" —— 相等就跳过，不再重复总结。
+   */
+  marker?: string;
 }
 
 export interface AnnotationData {
@@ -70,7 +75,12 @@ function parseSessionAnnotation(id: string, value: unknown): SessionAnnotation |
   const base = parseAnnotationRecord(id, value);
   if (!base) return null;
   const title = isRecord(value) && typeof value.title === "string" ? value.title : undefined;
-  return title === undefined ? base : { ...base, title };
+  const marker = isRecord(value) && typeof value.marker === "string" ? value.marker : undefined;
+  return {
+    ...base,
+    ...(title === undefined ? {} : { title }),
+    ...(marker === undefined ? {} : { marker }),
+  };
 }
 
 export function parseAnnotations(text: string | null | undefined): AnnotationData {
@@ -155,11 +165,47 @@ export function setSessionBrief(
   brief: string,
   now = new Date().toISOString(),
 ): AnnotationData {
+  const prev = data.sessions[id];
   return {
     ...data,
     sessions: {
       ...data.sessions,
-      [id]: { id, brief, updatedAt: now, ...(title === undefined ? {} : { title }) },
+      [id]: {
+        id,
+        brief,
+        updatedAt: now,
+        ...(title === undefined ? {} : { title }),
+        // marker 由区管家写入（见 setSessionMarker）；这里保留已有值，避免普通重命名把它抹掉。
+        ...(prev?.marker === undefined ? {} : { marker: prev.marker }),
+      },
+    },
+  };
+}
+
+/**
+ * 记录"这个会话已经被总结到哪个版本"。
+ *
+ * 区管家的一次性更新靠它做增量：marker 与宿主当前值相等 → 说明这条对话自上次总结后
+ * 没有任何新内容 → 直接跳过（不调模型）。所以只有**真的总结过**才写它。
+ */
+export function setSessionMarker(
+  data: AnnotationData,
+  id: string,
+  marker: string,
+  now = new Date().toISOString(),
+): AnnotationData {
+  const prev = data.sessions[id];
+  return {
+    ...data,
+    sessions: {
+      ...data.sessions,
+      [id]: {
+        id,
+        brief: prev?.brief ?? "",
+        ...(prev?.title === undefined ? {} : { title: prev.title }),
+        marker,
+        updatedAt: now,
+      },
     },
   };
 }

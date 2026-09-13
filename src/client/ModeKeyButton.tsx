@@ -8,8 +8,10 @@ import React from "react";
 import { getMode, setMode, useMode } from "./mode-store.ts";
 
 const MODE_CSS = `
-.fm-mk-btn{box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:none;border-radius:6px;background:transparent;cursor:pointer;padding:0}
-.fm-mk-btn:hover{background:var(--dsw-alias-bg-layer-1)}
+/* 底栏模式键：hover 面与官方底栏图标键一致（28~32px 方框 + 正圆）。
+   注意 .fm-mk-chip（MA logo 方片本身）的 18px / 6px 圆角是用户 v7 定案，本轮不动。 */
+.fm-mk-btn{box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:none;border-radius:50%;background:transparent;cursor:pointer;padding:0}
+.fm-mk-btn:hover{background:var(--dsw-alias-interactive-bg-hover)}
 // 2026-08-15 协调性调整 v2（用户反馈）：chip 22→18px（与左右 18px 线条图标同尺寸）、
 // 圆角 7→6px；MyAgent 态的黑底不再用纯黑——深色主题下改为侧栏背景色
 // （--dsw-specific-sidebar-fill = bluish-900），黑方块融入侧栏，只浮现白色 MA 字母，

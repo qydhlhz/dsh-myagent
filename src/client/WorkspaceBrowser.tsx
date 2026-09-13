@@ -1,9 +1,9 @@
-// src/client/WorkspaceBrowser.tsx — 工作沙盒区/会话列表（Round 2：与原生 DSH 对齐）。
+// src/client/WorkspaceBrowser.tsx — 工作区区/会话列表（Round 2：与原生 DSH 对齐）。
 // props 契约以真实槽位来源为准（参考 @deepseek-ai/dsh-client-ui-workspace/lib/client.js 的
 // WorkspaceBrowser 签名，行 1647）：owner share（useSessions/useWorkspaces/wide/expandSidebar）
 // + inject actions（client.ts 从 ctx.sessions / ctx.workspaces 提供，镜像 browserInjected 形状）。
 // Round 2 对齐原生行为：
-//   1) 收起/展开：工作沙盒行点击折叠/展开其会话列表（"A Workspace remembers whether it is
+//   1) 收起/展开：工作区行点击折叠/展开其会话列表（"A Workspace remembers whether it is
 //      closed or showing Sessions"）。展开态用 localStorage 持久化（key fm.workspace.collapsed，
 //      只存 collapsed 的 id 集合）；打开新会话时自动展开对应组（原生 onCreate 同款）。与原生
 //      差异：原生默认折叠非当前组，我们默认全部展开（v1 显示全部会话，且 spec 只存 collapsed
@@ -15,7 +15,7 @@
 //      行 → 下一行 id 为 undefined）。拖拽中目标行显示插入线（before/after，business-primary），
 //      文档级 dragover/drop 拦截防拖出列表时浏览器导航（useNativeDragAcceptance 同款）。
 //   3) 图标对齐：统一行结构——固定宽度图标列（16px 槽）+ 名称 + 行内操作按钮组（hover 显示）。
-//      工作沙盒行：Folder 图标（展开 IconFolderOpen16 / 收起 IconFolderClose16），hover 时切换
+//      工作区行：Folder 图标（展开 IconFolderOpen16 / 收起 IconFolderClose16），hover 时切换
 //      为三角箭头（IconTriangleRightFill14，展开态 rotate 90°，与原生 .arrow/.arrowOpen 一致）；
 //      会话行：状态小圆点（当前会话实心 business 点）。
 // UI polish 轮：rename/delete/archive 用 primitives Modal + Input；行按钮用 primitives Button；
@@ -24,6 +24,7 @@ import React, { useRef, useState } from "react";
 import {
   Button,
   IconArchiveOutline20,
+  IconChevronDownOutline14,
   IconEditOutline16,
   IconFolderClose16,
   IconFolderOpen16,
@@ -38,10 +39,11 @@ import {
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import type { SelectorHook, SessionsSnapshot, WorkspacesSnapshot, SessionSummary } from "./tree-utils.ts";
 import { validateNameInput } from "./tree-utils.ts";
+import { setActiveRoot } from "./active-root-store.ts";
 import { ConfirmModal, PromptModal } from "./ContextMenu.tsx";
 import { TopHatIcon } from "./TopHatIcon.tsx";
 import { Api, describeApiError } from "./api.ts";
-import type { ApiError } from "./api.ts";
+import type { ApiError, OrganizerAgentInfo, OrganizerRunSummary, OrganizerUsage } from "./api.ts";
 import {
   addGroup,
   createGroup,
@@ -66,22 +68,32 @@ import {
   setLastOrganizedAt,
   setLastPlan,
   setSessionBrief,
+  setSessionMarker,
   type AnnotationData,
 } from "./annotation-store.ts";
 import {
   applyOrganizeActionToGroups,
   applyOrganizeActionsToAnnotations,
-  buildOrganizePlan,
   diffOrganize,
   isGroupAction,
   normalizeOrganizePlan,
-  organizeActionKey,
   type OrganizeAction,
-  type OrganizeDiffItem,
   type OrganizerSnapshot,
   type OrganizerWorkspace,
 } from "./organizer.ts";
 import { OrganizePanel } from "./OrganizePanel.tsx";
+import {
+  FONT_SECONDARY,
+  HEADER_BORDER,
+  ICON_BUTTON_STYLE,
+  ICON_GLYPH_SIZE,
+  ICON_HIT_EXPAND,
+  RADIUS,
+  ROW_ACTION_BUTTON_STYLE,
+  ROW_ACTION_GAP,
+  ROW_ACTION_HIT_INSET,
+  ROW_MIN_HEIGHT,
+} from "./ui-kit.ts";
 
 export interface WorkspaceBrowserProps {
   wide?: boolean;
@@ -92,14 +104,20 @@ export interface WorkspaceBrowserProps {
   toolbarKey?: number;
   /** 区容器高度过渡期间置 true：列表滚动区临时 hidden（避免滚动条闪现抖动）。 */
   scrollLock?: boolean;
+  /**
+   * 收起态（rail）点「工作区」区标后要定位的工作区 id：侧栏展开时由 SidebarComposite 传入，
+   * 本组件消费（展开该工作区的会话列表 + 滚动到可见）后调 onRevealed 清空。
+   */
+  revealWorkspaceId?: string | null;
+  onRevealed?: () => void;
   /** 窄栏（rail）模式下点击顶部展开按钮的回调（宿主 rail / 外部注入；区级折叠不再传）。 */
   onExpand?: () => void;
-  /** 当前工作沙盒的文件 API（读取/写入 .myagent/groups.json 用）。 */
+  /** 当前工作区的文件 API（读取/写入 .myagent/groups.json 用）。 */
   api: Api | null;
   useSessions: SelectorHook<SessionsSnapshot>;
   useWorkspaces: SelectorHook<WorkspacesSnapshot>;
   startSession?: (workspaceId?: string) => void;
-  /** 新建工作沙盒（宿主原生目录选择器 + workspace.create）；用户取消时静默。 */
+  /** 新建工作区（宿主原生目录选择器 + workspace.create）；用户取消时静默。 */
   addWorkspace?: () => void | Promise<void>;
   open?: (sessionId: string) => void;
   renameSession?: (sessionId: string, title: string) => void | Promise<void>;
@@ -112,7 +130,7 @@ export interface WorkspaceBrowserProps {
 
 // 展开态持久化：localStorage 只存 collapsed 的 workspaceId 集合（缺省 = 展开）。
 const COLLAPSED_KEY = "fm.workspace.collapsed";
-// 分组折叠态持久化：localStorage 使用工作沙盒 + 分组复合 key，避免不同沙盒同名分组互相影响。
+// 分组折叠态持久化：localStorage 使用工作区 + 分组复合 key，避免不同区同名分组互相影响。
 const GROUP_COLLAPSED_KEY = "fm.group.collapsed";
 
 function readCollapsed(): Set<string> {
@@ -135,7 +153,7 @@ function writeCollapsed(ids: Set<string>): void {
 }
 
 // 行 hover / 拖拽插入线 / 箭头旋转统一走注入样式 + className（与 FileTree 的 TREE_CSS 同模式）。
-// 原生行为：行 hover 时显示操作按钮组（rowActions display:none → hover 显示）；工作沙盒行
+// 原生行为：行 hover 时显示操作按钮组（rowActions display:none → hover 显示）；工作区行
 // hover 时 Folder 图标切换为三角箭头（.projectRow .chevron{display:none} → hover 显示 + folder
 // 隐藏）；箭头展开态 rotate(90deg)（.arrow/.arrowOpen）。
 const BROWSER_CSS = `
@@ -147,8 +165,51 @@ const BROWSER_CSS = `
 .fm-wb-ws-row:hover .fm-wb-ws-folder{display:none}
 .fm-wb-arrow{transition:transform .15s var(--ds-ease-in-out, ease)}
 .fm-wb-arrow-open{transform:rotate(90deg)}
+/* ── 方案 B · 导轨树（用户 2026 选定，视觉对照页 .superpowers/brainstorm/workspace-ui）──
+   三级不再"只差缩进"，改成分工明确的三档：
+     一级 工作区 13px/600/主色   · 二级 分组 12px/600/次色（小节标签）· 三级 会话 13px/400/主色
+   再给分组容器画一条 1px 淡导轨，会话挂在导轨右侧 —— 从属关系不用读字。
+   导轨取 border-l2（官方最淡的分隔色），够淡、不抢内容；空分组/已收起分组里
+   top > bottom，伪元素高度为负、不绘制，不会留一条孤线。 */
+.fm-wb-grp{position:relative;margin-bottom:4px}
+.fm-wb-grp::before{
+  content:"";position:absolute;left:24px;top:36px;bottom:4px;width:1px;
+  background:var(--dsw-alias-border-l2);pointer-events:none
+}
+/* 二级的计数：从「名称 (1)」文本改成独立胶囊，帮它和一级划清界限。
+   底色用 interactive-bg-hover（亮/暗主题都自适应，不写死 rgba）。 */
+.fm-wb-cnt{
+  flex:none;font-size:11px;line-height:16px;height:16px;padding:0 6px;
+  border-radius:999px;background:var(--dsw-alias-interactive-bg-hover);
+  color:var(--dsw-alias-label-tertiary)
+}
+/* ── 图标按钮：字形收小 + 有效点击范围放大（用户反馈"有点拥挤"）──────────────
+   官方 .tool / .iconButton 是 28px 方框 + CSS 里把 svg 定成 15px（不看调用点传的 size）；
+   这里沿用同一接线并把字形再收一档到 14px，同时用伪元素把命中区向四周各扩 2px
+   （28 → 32，面积 +31%）。伪元素画在按钮盒外仍能命中、点击目标就是按钮本身，
+   所以命中区变大而布局与行高完全不变（行高仍由 28px 按钮托底）。
+   ⚠️ 相邻按钮 gap 必须 ≥ 2×2=4px，否则两个命中区重叠、点中谁看 DOM 顺序
+   —— 行内操作组原来是 gap:2，已同步改成 4。 */
+.fm-tb-btn svg,
+.fm-fold-btn svg,
+.fm-icon-btn svg,
+.fm-wb-row-actions > button svg{width:${ICON_GLYPH_SIZE}px;height:${ICON_GLYPH_SIZE}px}
+.fm-tb-btn,
+.fm-icon-btn,
+.fm-wb-row-actions > button{position:relative}
+/* 常规图标按钮（标题栏 / rail / 关闭键）：相邻 gap ≥ 4，各扩 2px → 32×32，边界正好相接。 */
+.fm-tb-btn::after,
+.fm-fold-btn::after,
+.fm-icon-btn::after{
+  content:"";position:absolute;inset:-${ICON_HIT_EXPAND}px;border-radius:999px
+}
+/* 行内操作按钮（紧凑 20px）：命中区横竖分开扩 —— 横向铺满 22px 节距（相邻严丝合缝，
+   既不重叠也不留死区），纵向白送 6px（20 → 32px 高，行内上下没有邻居）。 */
+.fm-wb-row-actions > button::after{
+  content:"";position:absolute;inset:${ROW_ACTION_HIT_INSET};border-radius:999px
+}
 .fm-wb-drop-before::before,.fm-wb-drop-after::after{
-  content:"";position:absolute;left:6px;right:6px;height:2px;border-radius:1px;
+  content:"";position:absolute;left:6px;right:6px;height:2px;border-radius:${RADIUS.pill}px;
   background:var(--dsw-alias-state-business-primary);pointer-events:none;z-index:2
 }
 .fm-wb-drop-before::before{top:-1px}
@@ -161,11 +222,23 @@ button.hHd-Xa_newSession,
 button[class*="newSession"],
 [role="button"].hHd-Xa_newSession,
 [role="button"][class*="newSession"]{display:none!important}
-/* 压缩原生 logo 区，避免遮挡工作沙盒按钮 */
+/* 压缩原生 logo 区，避免遮挡工作区按钮 */
 .hHd-Xa_logoRow{height:40px!important;margin-bottom:4px!important;padding:4px 0 4px 4px!important}
-/* 顶部侧栏收起键：宽态/收起态都显示双箭头（收起态为右箭头，不再显示鲸鱼） */
+/* 顶部侧栏收起键：宽态/收起态都显示双箭头（收起态为右箭头，不再显示鲸鱼）。
+   根因（2026 实测）：官方收起态按钮内部渲染的是 <span class="hHd-Xa_railMark"> 里的
+   DeepSeek 鲸鱼 svg（24×18），本插件又用 ::before 在同一颗 30×30 按钮上画 24×24 双箭头
+   ——两者同框叠在一起（用户报的"logo 和展开箭头重合"）。
+   此前只隐藏 .hHd-Xa_panelIcon / .hHd-Xa_railFish，而本版 dsh 的真实类名是
+   .hHd-Xa_railMark（railFish 是旧版名），所以鲸鱼一直没被隐藏掉。
+   三个类名一起隐藏：railMark 覆盖当前版本，railFish / panelIcon 覆盖旧版本。 */
 button.hHd-Xa_toggle .hHd-Xa_panelIcon,
+button.hHd-Xa_toggle .hHd-Xa_railMark,
 button.hHd-Xa_toggle .hHd-Xa_railFish{display:none!important}
+/* 官方在收起态 hover 时会把 railMark 改回 display:inline、把 panelIcon 显示出来
+   （.hHd-Xa_collapsed .hHd-Xa_toggle:hover ...）——上一条 !important 已覆盖，
+   这里再钉一次收起态，避免 hover 时鲸鱼闪回来压住双箭头。 */
+.hHd-Xa_collapsed button.hHd-Xa_toggle:hover .hHd-Xa_railMark,
+.hHd-Xa_collapsed button.hHd-Xa_toggle:hover .hHd-Xa_panelIcon{display:none!important}
 .hHd-Xa_root:not(.hHd-Xa_collapsed) button.hHd-Xa_toggle{position:relative}
 .hHd-Xa_root:not(.hHd-Xa_collapsed) button.hHd-Xa_toggle::before{
   content:"";position:absolute;left:50%;top:50%;width:24px;height:24px;transform:translate(-50%,-50%);
@@ -186,22 +259,16 @@ button.hHd-Xa_toggle .hHd-Xa_railFish{display:none!important}
 
 // icon-only 操作按钮统一规格：28px 方按钮、图标绝对居中（宿主 Button 的 leading-icon
 // 布局带右侧间距，icon-only 场景会视觉偏左；这里显式覆盖保证三按钮等尺寸对齐）。
-export const ICON_BTN_STYLE: React.CSSProperties = {
-  width: 28,
-  height: 28,
-  padding: 0,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  flex: "none",
-};
+// 圆角对齐官方图标按钮：官方 .tool / .iconButton 都是 28px 方框 + 全圆（正圆），
+// 此前没覆盖圆角，落到宿主 Button 的 14/18px 圆角，比官方方一些。
+export const ICON_BTN_STYLE: React.CSSProperties = ICON_BUTTON_STYLE;
 
 /** 拖拽中的活动行（镜像 ui-workspace 的 drag 状态：over 记录最近一次悬停位置）。 */
 interface DragState {
   kind: "workspace" | "session" | "group";
   /** workspace 拖拽 = workspaceId；session 拖拽 = sessionId；group 拖拽 = groupId。 */
   id: string;
-  /** session/group 拖拽的所属工作沙盒（跨组拖拽不生效，与原生 sameGroupDrag 一致）。 */
+  /** session/group 拖拽的所属工作区（跨组拖拽不生效，与原生 sameGroupDrag 一致）。 */
   workspaceId?: string;
   /** session 拖拽所属分组；用于限制同组内排序、跨组时只能 drop 到分组行。 */
   groupId?: string;
@@ -369,7 +436,7 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
   const flushing = useRef<Record<string, boolean>>({});
   // 用于识别“真正的新会话”：首次渲染只记录，后续出现的新 sessionId 才自动归入当前选中分组。
   const knownSessionIds = useRef<Record<string, Set<string>>>({});
-  // 一句话标注（annotations.json）状态：每个工作沙盒独立读写，权威副本始终在磁盘。
+  // 一句话标注（annotations.json）状态：每个工作区独立读写，权威副本始终在磁盘。
   const [annotationsByWorkspace, setAnnotationsByWorkspace] = useState<Record<string, AnnotationData>>({});
   const [annotationsVersions, setAnnotationsVersions] = useState<Record<string, unknown>>({});
   const [annotationsErrors, setAnnotationsErrors] = useState<Record<string, string>>({});
@@ -378,19 +445,37 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
   const annotationsDiskRef = useRef<Record<string, AnnotationData>>({});
   const annotationsPending = useRef<Record<string, Array<{ mutate: (data: AnnotationData) => AnnotationData }>>>({});
   const annotationsFlushing = useRef<Record<string, boolean>>({});
+  // 当前正在跑的写盘 promise：`reloadGroupsAndAnnotations()` 会把 diskRef 换成磁盘内容，
+  // 若写盘还没落地就会读到**旧文件**（marker 丢失 → 区管家把刚更新过的会话又算成"有新对话"）。
+  // 所以重载前要先 await 它。
+  const annotationsFlushPromise = useRef<Record<string, Promise<void> | undefined>>({});
   // 已自动生成过简述的会话（避免反复写盘）。
   const autoBriefedRef = useRef<Set<string>>(new Set());
   // 统计每个会话的完成轮次（running true→false 记一次交互），用于“四次交互后生成简介”。
   const interactionCounts = useRef<Record<string, number>>({});
   const lastRunning = useRef<Record<string, boolean>>({});
   const summaryRequested = useRef<Set<string>>(new Set());
-  // 沙盒管家交互状态。
+  // 区管家交互状态。
   const [organizeOpen, setOrganizeOpen] = useState(false);
-  const [organizeLoading, setOrganizeLoading] = useState(false);
   const [organizeApplying, setOrganizeApplying] = useState(false);
   const [organizeError, setOrganizeError] = useState<string | null>(null);
-  const [organizeItems, setOrganizeItems] = useState<OrganizeDiffItem[]>([]);
-  const [resummarizingAll, setResummarizingAll] = useState(false);
+  // 区管家「一键更新全部对话」。
+  const [updateRunning, setUpdateRunning] = useState(false);
+  const [updateSummary, setUpdateSummary] = useState<OrganizerRunSummary | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updateDetails, setUpdateDetails] = useState<Array<{ sessionId: string; title?: string; brief?: string }>>([]);
+  const [updateProgress, setUpdateProgress] = useState<{ done: number; total: number } | null>(null);
+  // 区管家「一键整理分组」。
+  const [organizing, setOrganizing] = useState(false);
+  const [organizeSummary, setOrganizeSummary] = useState<{ created: number; moved: number; renamed: number; deleted: number; updated: number } | null>(null);
+  const [organizeDetails, setOrganizeDetails] = useState<Array<{ key: string; primary: string; secondary?: string }>>([]);
+  const [canUndoOrganize, setCanUndoOrganize] = useState(false);
+  const organizeUndoRef = useRef<Array<{ workspaceId: string; groups: SessionGroups; annotations: AnnotationData }> | null>(null);
+  // 有变化的会话数（null = 还没统计出来）与用量。
+  const [changedCount, setChangedCount] = useState<number | null>(null);
+  const [agentInfo, setAgentInfo] = useState<OrganizerAgentInfo | null>(null);
+  const [agentUsage, setAgentUsage] = useState<OrganizerUsage | null>(null);
+  const [loadingInfo, setLoadingInfo] = useState(false);
 
   const workspaceById = (id: string) => workspaces.find((x) => x.workspaceId === id);
   const apiForWorkspace = (id: string) => {
@@ -399,7 +484,7 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
   };
   const groupsForWorkspace = (id: string) => groupsByWorkspace[id] ?? emptyGroups();
   const annotationsForWorkspace = (id: string) => annotationsByWorkspace[id] ?? emptyAnnotations();
-  // 更新 annotations.json：立即乐观更新本地状态，再串行写盘（按工作沙盒排队）。
+  // 更新 annotations.json：立即乐观更新本地状态，再串行写盘（按工作区排队）。
   // 首次写入前会重读磁盘，避免覆盖已存在的 annotations.json。
   const flushAnnotations = async (workspaceId: string) => {
     const api = apiForWorkspace(workspaceId);
@@ -473,8 +558,18 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
     (annotationsPending.current[workspaceId] ??= []).push({ mutate });
     if (!annotationsFlushing.current[workspaceId]) {
       annotationsFlushing.current[workspaceId] = true;
-      void flushAnnotations(workspaceId).finally(() => { annotationsFlushing.current[workspaceId] = false; }).catch(() => {});
+      annotationsFlushPromise.current[workspaceId] = flushAnnotations(workspaceId)
+        .catch(() => {})
+        .finally(() => {
+          annotationsFlushing.current[workspaceId] = false;
+        });
     }
+  };
+
+  /** 等所有挂起/在飞的标注写盘落地（重载前调用，避免读到旧文件）。 */
+  const awaitAnnotationsFlushed = async () => {
+    const pending = Object.values(annotationsFlushPromise.current).filter(Boolean) as Promise<void>[];
+    if (pending.length > 0) await Promise.all(pending);
   };
   const workspaceKey = workspaces.map((w) => `${w.workspaceId}:${w.path}`).join("|");
   // 当前选中的分组：新会话默认进入该分组；默认分组 id 作为兜底。
@@ -556,7 +651,7 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
     onSuccess?: () => void,
   ) => {
     const api = apiForWorkspace(workspaceId);
-    if (!api) { window.alert("无法定位工作沙盒"); return false; }
+    if (!api) { window.alert("无法定位工作区"); return false; }
     if (!groupsLoaded[workspaceId]) { window.alert("分组尚未加载完成，请稍后重试"); return false; }
     (pendingMutations.current[workspaceId] ??= []).push({ mutate, onSuccess });
     if (!flushing.current[workspaceId]) {
@@ -595,7 +690,7 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
     return () => { cancelled = true; };
   }, [workspaceKey]);
 
-  // 一句话标注加载：每个工作沙盒独立读 .myagent/annotations.json；损坏/缺失按空标注初始化。
+  // 一句话标注加载：每个工作区独立读 .myagent/annotations.json；损坏/缺失按空标注初始化。
   React.useEffect(() => {
     let cancelled = false;
     for (const w of workspaces) {
@@ -806,7 +901,22 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
     void Promise.resolve().then(() => props.startSession?.(wsId)).catch((e) => window.alert(`操作失败：${e?.message ?? String(e)}`));
   };
 
-  // 沙盒管家：收集当前全部工作沙盒树 + 标注，生成建议并切换到差异交互框。
+  /**
+   * 在**指定分组的标题行**上点"新对话"：把新对话建在该分组下。
+   *
+   * 归组机制复用既有那条 effect（新出现的 sessionId 自动移入该工作区"当前选中分组"），
+   * 所以这里只需先把"当前选中分组"切到本分组、并确保它展开，再新建会话即可 ——
+   * 与工具栏那颗按钮走的是同一条路，不额外造一套归组逻辑。
+   */
+  const handleNewChatInGroup = (workspaceId: string, groupId: string) => {
+    selectGroup(workspaceId, groupId);
+    expandGroup(workspaceId, groupId);
+    void Promise.resolve()
+      .then(() => props.startSession?.(workspaceId))
+      .catch((e) => window.alert(`操作失败：${e?.message ?? String(e)}`));
+  };
+
+  // 区管家：收集当前全部工作区树 + 标注，生成建议并切换到差异交互框。
   const collectSnapshot = (): OrganizerSnapshot => ({
     workspaces: workspaces.map((w) => {
       // 优先读磁盘 ref（重新整理前会 reload），确保拿到最新简介/标题/分组。
@@ -846,7 +956,7 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
     }),
   });
 
-  // 等待指定工作沙盒的分组写入队列排空（最多 5 秒）。
+  // 等待指定工作区的分组写入队列排空（最多 5 秒）。
   const waitForGroupFlush = async (workspaceIds: string[]) => {
     for (let i = 0; i < 100; i++) {
       if (workspaceIds.every((id) => !flushing.current[id])) return;
@@ -854,7 +964,7 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
     }
   };
 
-  // 整理应用后重新从磁盘加载分组与标注，确保工作沙盒空间立即反映最新结果。
+  // 整理应用后重新从磁盘加载分组与标注，确保工作区空间立即反映最新结果。
   const reloadGroupsAndAnnotations = async () => {
     await Promise.all(workspaces.map(async (w) => {
       const api = new Api(w.path);
@@ -882,101 +992,294 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
           return next;
         });
       } catch {
-        // 单个工作沙盒刷新失败不阻塞其它沙盒。
+        // 单个工作区刷新失败不阻塞其它区。
       }
     }));
   };
 
-  const handleResummarizeAll = async () => {
-    setResummarizingAll(true);
-    try {
-      const sessionToWs = new Map<string, string>();
-      const sessions: Array<{ id: string }> = [];
-      for (const w of workspaces) {
-        const visible = (w.sessionIds ?? []).filter((id) => !archived.includes(id));
-        for (const id of visible) {
-          if (!sessionToWs.has(id)) sessionToWs.set(id, w.workspaceId);
-          sessions.push({ id });
-        }
+  /**
+   * 收集「可见会话 + 上次总结时的 marker」。
+   *
+   * marker 存在各工作区 `.myagent/annotations.json` 的 session 条目里：它是宿主上次总结时
+   * 给的持久化标记（`ev:<事件数>`）。宿主拿它和当前值比较 → 相等就是"这个对话自上次总结后
+   * 没有任何新内容"，区管家直接跳过（不调模型）。
+   */
+  const collectSummarizeTargets = () => {
+    const sessionToWs = new Map<string, string>();
+    const sessions: Array<{ id: string; marker?: string | null }> = [];
+    for (const w of workspaces) {
+      const ann = annotationsDiskRef.current[w.workspaceId] ?? annotationsForWorkspace(w.workspaceId);
+      const visible = (w.sessionIds ?? []).filter((id) => !archived.includes(id));
+      for (const id of visible) {
+        if (sessionToWs.has(id)) continue;
+        sessionToWs.set(id, w.workspaceId);
+        sessions.push({ id, marker: ann.sessions[id]?.marker ?? null });
       }
-      if (sessions.length === 0) return;
-      const res = await new Api("").resummarizeAll(sessions);
-      if (res.ok && res.data?.updates) {
-        for (const u of res.data.updates) {
-          if (!u.title && !u.brief) continue;
+    }
+    return { sessionToWs, sessions };
+  };
+
+  /** 问宿主：哪些会话有新对话（marker 变了）+ 管家是谁 + 真实消耗用量。 */
+  const refreshOrganizerStatus = async () => {
+    setLoadingInfo(true);
+    try {
+      const { sessions } = collectSummarizeTargets();
+      const res = await new Api("").organizerStatus(sessions.map((s) => ({ id: s.id })));
+      if (!res.ok) return;
+      setAgentInfo(res.data.agent);
+      setAgentUsage(res.data.usage ?? null);
+      const markerById = new Map(res.data.sessions.map((s) => [s.id, s.marker]));
+      let changed = 0;
+      for (const s of sessions) {
+        const current = markerById.get(s.id) ?? null;
+        // marker 拿不到（stat 不可用）时保守算作"有变化"，宁可多总结也不要漏掉新对话。
+        if (current === null || s.marker == null || s.marker !== current) changed += 1;
+      }
+      setChangedCount(changed);
+    } catch {
+      // 状态查询失败不影响其它功能，面板沿用上一次的数字。
+    } finally {
+      setLoadingInfo(false);
+    }
+  };
+
+  /** 把一条会话的更新结果落到界面与磁盘（**先简介、后标题**，再记 marker）。 */
+  const applySessionUpdate = (
+    wsId: string,
+    u: { sessionId: string; title?: string; brief?: string; marker?: string },
+  ) => {
+    // ① 先写简介。
+    if (u.brief) updateAnnotations(wsId, (d) => setSessionBrief(d, u.sessionId, undefined, u.brief!));
+    // ② 再写标题（宿主给的就是 `主题：进度`）。
+    if (u.title) {
+      props.renameSession?.(u.sessionId, u.title);
+      const briefNow = u.brief ?? annotationsForWorkspace(wsId).sessions[u.sessionId]?.brief ?? "";
+      updateAnnotations(wsId, (d) => setSessionBrief(d, u.sessionId, u.title!, briefNow));
+    }
+    // ③ 记 marker：下次只更新"又聊过"的会话。
+    if (u.marker) updateAnnotations(wsId, (d) => setSessionMarker(d, u.sessionId, u.marker!));
+  };
+
+  /**
+   * 区管家「一键更新全部对话」。
+   *
+   * **分块循环**是关键：用户真实工作区有上百条会话，逐个走模型远超单个 HTTP 请求的预算
+   * （路由 60s 硬超时），一次性发过去只会得到"跑了半天、大半没更新"。
+   * 所以每块 6 条、每块单独一次请求，边跑边把进度与结果打到面板上；
+   * 每块结束后立刻落盘并用宿主复核 marker（改名会写日志、让 marker 立刻过期）。
+   */
+  const handleUpdateChanged = async () => {
+    setUpdateRunning(true);
+    setUpdateError(null);
+    setUpdateProgress(null);
+    const CHUNK = 6;
+    try {
+      // 先取一次状态：拿到"有新对话"的会话 + 各自 marker（跳过没聊过的）。
+      const { sessionToWs, sessions } = collectSummarizeTargets();
+      if (sessions.length === 0) {
+        setUpdateError("没有可见会话可更新。");
+        return;
+      }
+      const status = await new Api("").organizerStatus(sessions.map((s) => ({ id: s.id })));
+      if (!status.ok) {
+        setUpdateError(`无法获取会话状态：${status.message}`);
+        return;
+      }
+      setAgentInfo(status.data.agent);
+      setAgentUsage(status.data.usage ?? null);
+      const markerById = new Map(status.data.sessions.map((s) => [s.id, s.marker]));
+      let changed = 0;
+      const targets = sessions.filter((s) => {
+        const current = markerById.get(s.id) ?? null;
+        const isChanged = current === null || s.marker == null || s.marker !== current;
+        if (isChanged) changed += 1;
+        return isChanged;
+      });
+      setChangedCount(changed);
+      if (targets.length === 0) {
+        setUpdateSummary({ checked: sessions.length, updated: 0, unchanged: sessions.length, skipped: 0, agent: 0, local: 0, elapsedMs: 0 });
+        setUpdateDetails([]);
+        return;
+      }
+
+      const details: Array<{ sessionId: string; title?: string; brief?: string }> = [];
+      const totals = { checked: 0, updated: 0, unchanged: 0, skipped: 0, agent: 0, local: 0 };
+      const startedAt = Date.now();
+      for (let i = 0; i < targets.length; i += CHUNK) {
+        const chunk = targets.slice(i, i + CHUNK);
+        setUpdateProgress({ done: i, total: targets.length });
+        const res = await new Api("").resummarizeAll(chunk);
+        if (!res.ok) {
+          setUpdateError(`更新中断（已完成 ${i} / ${targets.length}）：${res.message}`);
+          break;
+        }
+        for (const u of res.data.updates ?? []) {
           const wsId = sessionToWs.get(u.sessionId);
           if (!wsId) continue;
-          if (u.title) props.renameSession?.(u.sessionId, u.title);
-          const current = annotationsForWorkspace(wsId).sessions[u.sessionId];
-          const nextTitle = u.title ?? current?.title ?? u.sessionId;
-          const nextBrief = u.brief ?? current?.brief ?? "";
-          if (u.title || u.brief) {
-            updateAnnotations(wsId, (d) => setSessionBrief(d, u.sessionId, nextTitle, nextBrief));
+          // 跳过的会话（没有实质内容）：只记 marker，不动标题/简介 ——
+          // 这样它下次不会再被算成"有新对话"，直到它真的聊出内容来。
+          if (u.skipped || u.unchanged) {
+            if (u.marker) updateAnnotations(wsId, (d) => setSessionMarker(d, u.sessionId, u.marker!));
+            continue;
           }
+          applySessionUpdate(wsId, u);
+          details.push({ sessionId: u.sessionId, title: u.title, brief: u.brief });
         }
-        await reloadGroupsAndAnnotations();
-      } else if (!res.ok) {
-        window.alert(`重新总结失败：${res.message}`);
-      } else {
-        window.alert("重新总结失败：返回数据为空");
+        const s = res.data.summary;
+        if (s) {
+          totals.checked += s.checked;
+          totals.updated += s.updated;
+          totals.unchanged += s.unchanged;
+          totals.skipped += s.skipped;
+          totals.agent += s.agent;
+          totals.local += s.local;
+        }
+        if (res.data.agent) setAgentInfo(res.data.agent);
+        setUpdateDetails([...details]);
+        setUpdateProgress({ done: Math.min(i + CHUNK, targets.length), total: targets.length });
+        // 边跑边落盘，并把 marker 用宿主的当前值复核一遍（改名会写日志、立刻让 marker 过期）。
+        await awaitAnnotationsFlushed();
+        await reseedMarkers(sessionToWs, (res.data.updates ?? []).map((u) => u.sessionId));
       }
+      setUpdateSummary({ ...totals, elapsedMs: Date.now() - startedAt });
+      // 收尾再补一次 marker（覆盖最后一块的改名写入），然后才刷新状态与工作区。
+      await reseedMarkers(sessionToWs, details.map((d) => d.sessionId));
+      await reloadGroupsAndAnnotations();
+      await refreshOrganizerStatus();
+      console.log("[dsh-myagent] 区管家一键更新完成", totals);
     } catch (e) {
-      window.alert(`重新总结失败：${(e as Error)?.message ?? String(e)}`);
+      setUpdateError(`更新失败：${(e as Error)?.message ?? String(e)}`);
     } finally {
-      setResummarizingAll(false);
+      setUpdateProgress(null);
+      setUpdateRunning(false);
     }
   };
 
-  const handleOrganize = async () => {
-    // 先切到差异交互框并显示“整理中”，避免请求 agent 期间看起来像“点了没反应”。
-    setOrganizeOpen(true);
-    setOrganizeLoading(true);
+  /**
+   * 用宿主的**当前** marker 复核这批会话。
+   *
+   * `props.renameSession` 会往会话日志写一条 title 事件 → 刚记的 `sz:` 立刻过期；
+   * 不补的话下一次一键更新又会把它们当"有新对话"重新总结（改名 → 过期 → 无限改下去）。
+   * 只对本次真的处理过的会话补，绝不顺手给没处理过的会话写 marker
+   * （那等于宣布它们"已经是最新"，会永远漏掉）。
+   */
+  const reseedMarkers = async (sessionToWs: Map<string, string>, ids: string[]) => {
+    if (ids.length === 0) return;
+    try {
+      // 等一拍再读：`renameSession` 是异步 RPC，标题事件落进会话日志需要一点时间；
+      // 读得太早会拿到**改名之前**的大小，marker 立刻又过期（实测第二轮一键更新
+      // 会把刚更新过的会话再改一遍）。
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      const fresh = await new Api("").organizerStatus(ids.map((id) => ({ id })));
+      if (!fresh.ok) return;
+      const freshById = new Map(fresh.data.sessions.map((s) => [s.id, s.marker]));
+      for (const id of ids) {
+        const wsId = sessionToWs.get(id);
+        const m = freshById.get(id);
+        if (wsId && m) updateAnnotations(wsId, (d) => setSessionMarker(d, id, m));
+      }
+      await awaitAnnotationsFlushed();
+    } catch {
+      // 补 marker 失败不影响本次结果，下次最多多总结一次。
+    }
+  };
+
+  /**
+   * 区管家「一键整理分组」：算一次计划并**直接应用**（不再让用户逐条勾选），
+   * 结果以计数摘要呈现，并保留一份可撤销快照。
+   *
+   * 为什么敢直接应用：整理前的 groups/annotations 会整份留档（`organizeUndoRef`），
+   * 面板上出现「撤销这次整理」；比起"先给 26 条差异让用户做功课"，这才是"一键"。
+   */
+  const handleOrganizeGroups = async () => {
+    setOrganizing(true);
     setOrganizeError(null);
     try {
-      // 重新整理前先从磁盘重新读取当前分组与简介/标题，确保发给独立 agent 的是最新快照。
       await reloadGroupsAndAnnotations();
       const snapshot = collectSnapshot();
-      const localPlan = buildOrganizePlan(snapshot);
-      let plan = localPlan;
-      // 优先请求宿主侧的常驻整理员 agent；不可用时使用本地确定性整理器。
-      try {
-        const res = await new Api("").organizePlan(snapshot);
-        if (res.ok && res.data?.plan && Array.isArray(res.data.plan.actions)) {
-          const agentPlan = normalizeOrganizePlan(res.data.plan);
-          // 合并 agent 建议与本地修正（如纠正旧版错误简介产生的无意义分组名），
-          // 确保即使 agent 没发现“的对”这类问题，本地修正仍会出现在建议里。
-          const seen = new Set(agentPlan.actions.map((a) => organizeActionKey(a)));
-          const merged = [...agentPlan.actions];
-          // 补充本地“安全修正”（重命名无意义分组/删除空组/合并重名）
-          // 以及“拆分宽泛分组”（g_split_ 前缀的建组/移入），
-          // 不把本地粗粒度“按单个关键词建组”混进 agent 的细分结果。
-          const correctiveKinds = new Set(["renameGroup", "deleteGroup", "mergeGroup"]);
-          const isSplitAction = (action: OrganizeAction) =>
-            (action.kind === "createGroup" && action.groupId.startsWith("g_split_")) ||
-            (action.kind === "moveSession" && action.toGroupId.startsWith("g_split_"));
-          for (const action of localPlan.actions) {
-            if (!correctiveKinds.has(action.kind) && !isSplitAction(action)) continue;
-            const key = organizeActionKey(action);
-            if (!seen.has(key)) {
-              merged.push(action);
-              seen.add(key);
-            }
-          }
-          plan = { actions: merged };
-        }
-      } catch {
-        // 宿主端点不可用/网络失败：保持本地 plan。
+      // 分区策略**只由模型产出**（用户定案："分区策略也得是模型思考后的"）。
+      // 旧实现在这里先跑一遍本地确定性规则（buildOrganizePlan）当底稿，再把模型计划与本地的
+      // "修正项"（renameGroup / deleteGroup / mergeGroup / 拆分宽泛分组）**合并**；模型失败时
+      // 更是整份退回本地计划。于是最终应用的"分区建议"里混着本地规则、失败时完全没有模型参与。
+      // 现在：模型拿不出计划就如实报错，**不产出任何建议**，本地规则不再参与。
+      const res = await new Api("").organizePlan(snapshot);
+      // 错误必须带**真实原因**：describeApiError 对未知 code 只会给"操作失败（INTERNAL）"，
+      // 而这里"为什么没有建议"恰恰是用户唯一能拿到的信息（本地不再兜底了）。
+      if (!res.ok) throw new Error(`模型未给出整理建议：${res.message || res.code || res.status}`);
+      if (!res.data?.plan) throw new Error("模型未返回整理建议");
+      const plan = normalizeOrganizePlan(res.data.plan);
+      const actions = plan.actions;
+      const summary = {
+        created: actions.filter((a) => a.kind === "createGroup").length,
+        moved: actions.filter((a) => a.kind === "moveSession").length,
+        renamed: actions.filter((a) => a.kind === "renameGroup" || a.kind === "mergeGroup").length,
+        deleted: actions.filter((a) => a.kind === "deleteGroup").length,
+        updated: actions.filter((a) => a.kind === "updateBrief").length,
+      };
+      setOrganizeDetails(
+        diffOrganize(snapshot, plan).map((item) => ({ key: item.id, primary: item.title, secondary: item.description })),
+      );
+      if (actions.length === 0) {
+        setOrganizeSummary({ created: 0, moved: 0, renamed: 0, deleted: 0, updated: 0 });
+        return;
       }
-      const items = diffOrganize(snapshot, plan);
-      setOrganizeItems(items);
-    } catch (e: unknown) {
+      // 留档（整份 groups + annotations），供"撤销这次整理"。
+      organizeUndoRef.current = workspaces.map((w) => ({
+        workspaceId: w.workspaceId,
+        groups: groupsDiskRef.current[w.workspaceId] ?? groupsForWorkspace(w.workspaceId),
+        annotations: annotationsDiskRef.current[w.workspaceId] ?? annotationsForWorkspace(w.workspaceId),
+      }));
+      setCanUndoOrganize(true);
+      await handleApplyOrganize(actions, { keepOpen: true, extraSummary: summary });
+      await refreshOrganizerStatus();
+    } catch (e) {
+      // 失败也要刷新管家状态：planner agent 在报错前**已经建出来了**，不刷新的话
+      // 「分区建议」那行还停在"未启动"，看起来像根本没走模型。
+      void refreshOrganizerStatus();
       setOrganizeError(e instanceof Error ? e.message : String(e));
     } finally {
-      setOrganizeLoading(false);
+      setOrganizing(false);
     }
   };
 
-  const handleApplyOrganize = async (actions: OrganizeAction[]) => {
+  /** 撤销上一次「一键整理分组」：把当时留档的 groups / annotations 整份写回。 */
+  const handleUndoOrganize = async () => {
+    const backup = organizeUndoRef.current;
+    if (!backup || backup.length === 0) return;
+    setOrganizing(true);
+    try {
+      for (const item of backup) {
+        const api = apiForWorkspace(item.workspaceId);
+        if (!api) continue;
+        try {
+          const savedGroups = await saveGroups(api, item.groups, groupsVersionsRef.current[item.workspaceId]);
+          groupsVersionsRef.current[item.workspaceId] = savedGroups;
+          groupsDiskRef.current[item.workspaceId] = item.groups;
+        } catch (e) {
+          setOrganizeError(`撤销分组失败：${describeApiError(e as unknown as ApiError)}`);
+        }
+        try {
+          const savedAnn = await saveAnnotations(api, item.annotations, annotationsVersionsRef.current[item.workspaceId]);
+          annotationsVersionsRef.current[item.workspaceId] = savedAnn;
+          annotationsDiskRef.current[item.workspaceId] = item.annotations;
+        } catch (e) {
+          setOrganizeError(`撤销标注失败：${describeApiError(e as unknown as ApiError)}`);
+        }
+      }
+      organizeUndoRef.current = null;
+      setCanUndoOrganize(false);
+      setOrganizeSummary(null);
+      setOrganizeDetails([]);
+      await reloadGroupsAndAnnotations();
+    } finally {
+      setOrganizing(false);
+    }
+  };
+
+  const handleApplyOrganize = async (
+    actions: OrganizeAction[],
+    options: { keepOpen?: boolean; extraSummary?: { created: number; moved: number; renamed: number; deleted: number; updated: number } } = {},
+  ) => {
     setOrganizeApplying(true);
     try {
       const groupMutations: Record<string, Array<(d: SessionGroups) => SessionGroups>> = {};
@@ -1007,14 +1310,15 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
           return next;
         });
       }
-      // 等待分组写入队列排空，再重新从磁盘加载分组/标注，刷新工作沙盒空间。
+      // 等待分组写入队列排空，再重新从磁盘加载分组/标注，刷新工作区空间。
       await waitForGroupFlush([...affected]);
       await new Promise((resolve) => setTimeout(resolve, 50));
       await reloadGroupsAndAnnotations();
+      if (options.extraSummary) setOrganizeSummary(options.extraSummary);
     } finally {
       setOrganizeApplying(false);
-      setOrganizeOpen(false);
-      setOrganizeItems([]);
+      // 「一键整理分组」保持面板打开（要显示结果与撤销）；旧的勾选流程仍然应用后关闭。
+      if (!options.keepOpen) setOrganizeOpen(false);
     }
   };
 
@@ -1055,7 +1359,11 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
     });
   };
 
-  // 重新总结当前重命名会话的标题或简介。
+  // 重新总结当前重命名会话：**先写简介，再写标题**（用户定的顺序）。
+  //
+  // 两个按钮都走完整的两步更新：宿主会先产出简介、再依据简介产出 `主题：进度` 标题，
+  // 这里先把简介落到界面上、再落标题 —— 所以任何时刻看到的标题都对应着已经写入的简介。
+  // 区别只在按钮的措辞与 loading 态，不再出现"两个按钮给出同一段文本"。
   const handleResummarizeSession = async (mode: "title" | "brief") => {
     if (!renameTarget || renameTarget.kind !== "session") return;
     const sessionId = renameTarget.id;
@@ -1063,19 +1371,26 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
     if (mode === "title") setResummarizingTitle(true);
     else setResummarizingBrief(true);
     try {
+      // 必须把 mode 传下去：服务端 `resummarizeSession` 按 mode **过滤返回字段**
+      // （brief 只回 brief、title 只回 title）。v0.3.0 那轮这里被写死成 "both"，
+      // 于是点「重新总结简介」也会带回 title、下面两段都执行 → 标题被一起改掉。
       const res = await new Api("").sessionResummarize(sessionId, mode);
       if (res.ok) {
         const data = res.data;
-        if (mode === "title" && data.title) {
+        // ① 先简介。
+        if (data.brief) {
+          const titleForBrief = data.title ?? renameTarget.title;
+          updateAnnotations(workspaceId, (d) => setSessionBrief(d, sessionId, titleForBrief, data.brief!));
+          setRenameTarget((prev) => (prev ? { ...prev, brief: data.brief! } : prev));
+        }
+        // ② 再标题（`主题：进度`）。
+        if (data.title) {
           props.renameSession?.(sessionId, data.title);
-          setRenameTarget((prev) => prev ? { ...prev, title: data.title! } : prev);
-          updateAnnotations(workspaceId, (d) => setSessionBrief(d, sessionId, data.title!, renameTarget.brief ?? ""));
+          updateAnnotations(workspaceId, (d) => setSessionBrief(d, sessionId, data.title!, data.brief ?? renameTarget.brief ?? ""));
+          setRenameTarget((prev) => (prev ? { ...prev, title: data.title! } : prev));
         }
-        if (mode === "brief" && data.brief) {
-          const nextTitle = renameTarget.title;
-          updateAnnotations(workspaceId, (d) => setSessionBrief(d, sessionId, nextTitle, data.brief!));
-          setRenameTarget((prev) => prev ? { ...prev, brief: data.brief! } : prev);
-        }
+        // ③ 记 marker：这次总结覆盖到的会话版本，区管家下次据此判断"有没有新对话"。
+        void refreshOrganizerStatus();
       } else {
         window.alert(`重新总结失败：${res.message}`);
       }
@@ -1105,6 +1420,22 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
     next.add(workspaceId);
     setCollapsedIds(next);
   };
+
+  // 列表滚动区 ref：收起态点「工作区」区标后需要把目标工作区滚到可见。
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 收起态点「工作区」区标 → 展开后定位：确保该工作区是展开的（会话列表可见），
+  // 再滚动到可见。只依赖 revealWorkspaceId —— 消费一次就回调清空（上层置 null），
+  // 否则每次渲染都会重新滚动一次。故意不把 expand/onRevealed 放进依赖。
+  React.useEffect(() => {
+    const id = props.revealWorkspaceId;
+    if (id === null || id === undefined) return;
+    expand(id);
+    const nodes = scrollRef.current?.querySelectorAll("[data-workspace-id]");
+    const el = nodes === undefined ? undefined : Array.from(nodes).find((n) => n.getAttribute("data-workspace-id") === id);
+    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    props.onRevealed?.();
+  }, [props.revealWorkspaceId]);
 
   // 拖拽提交：anchor 计算与原生 commitSessionDrag/commitWorkspaceDrag 一致
   // （after 最后一行 → anchor undefined → runtime "omitted appends" 追加到末尾），
@@ -1173,28 +1504,14 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
     };
   }, [drag !== null]);
 
-  // 窄栏（rail）模式（宿主整体 rail 用；区级折叠不再走此分支）：只渲染图标列，
-  // 点击即"在该工作沙盒新建会话"。
-  // onExpand 存在（外部注入）时顶部加展开按钮，折叠后仍可展开本区。
-  if (!props.wide) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, paddingTop: 8 }}>
-        <style>{BROWSER_CSS}</style>
-        {props.onExpand ? (
-          <Button size="sm" variant="ghost" icon={<IconPanelLeftOutline16 size={16} />} style={ICON_BTN_STYLE} title="展开工作沙盒" aria-label="展开工作沙盒" onClick={() => props.onExpand?.()} />
-        ) : null}
-        <Button size="sm" variant="ghost" icon={<IconNewChatOutline16 size={16} />} title="新对话（当前选中分组）" aria-label="新对话（当前选中分组）" data-myagent-new-chat onClick={() => handleNewChat()} />
-        {workspaces.map((w) => (
-          <Button key={w.workspaceId} size="sm" variant="ghost" icon={<IconFolderOpen16 size={16} />} title={w.title ?? w.path} aria-label={w.title ?? w.path} onClick={() => props.startSession?.(w.workspaceId)} />
-        ))}
-      </div>
-    );
-  }
+  // 收起态（rail）不再由本组件渲染：整块 rail 交给 RailPanel（两颗区标 + 进行中任务点列）。
+  // 旧分支是"每个工作区一颗文件夹图标、点击 = startSession(workspaceId)"，也就是用户报的
+  // "点文件夹图标会新建对话"，已随本次重设计删除。
 
   if (workspaces.length === 0) {
     return (
-      <div style={{ fontSize: 13, padding: 8, color: "var(--dsw-alias-label-secondary)" }}>
-        暂无工作沙盒（请在宿主侧添加）
+      <div style={{ fontSize: FONT_SECONDARY, padding: 8, color: "var(--dsw-alias-label-secondary)" }}>
+        暂无工作区（请在宿主侧添加）
       </div>
     );
   }
@@ -1263,6 +1580,7 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
       <div
         key={arg.groupId}
         data-group-id={arg.groupId}
+        className="fm-wb-grp"
         onPointerMove={updateSessionLongPress}
         onPointerUp={endSessionLongPress}
         onPointerCancel={endSessionLongPress}
@@ -1308,6 +1626,7 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
           }}
           onRename={() => setGroupAction({ kind: "rename", workspaceId: arg.workspaceId, groupId: arg.groupId, name: arg.name, brief: annotationsForWorkspace(arg.workspaceId).groups[arg.groupId]?.brief ?? "" })}
           onDelete={arg.groupId === DEFAULT_GROUP_ID ? undefined : () => setGroupAction({ kind: "delete", workspaceId: arg.workspaceId, groupId: arg.groupId, name: arg.name })}
+          onNewChat={() => handleNewChatInGroup(arg.workspaceId, arg.groupId)}
           highlight={isSessionDropTarget}
           onSessionDragOver={(e) => {
             if (drag?.kind !== "session" || drag.workspaceId !== arg.workspaceId || drag.groupId === arg.groupId) return;
@@ -1340,14 +1659,18 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
                   className="fm-wb-row"
                   onPointerDown={(e) => startSessionLongPress(e, arg.workspaceId, id)}
                   style={{
-                    padding: "3px 4px 3px 20px",
+                    padding: "3px 8px 3px 34px",
+                    // 行高显式钉住：20px 紧凑按钮撑不到 34px，不钉就会塌掉。
+                    // box-sizing:border-box 见工作区行同款注释（否则 minHeight 不含 padding）。
+                    boxSizing: "border-box",
+                    minHeight: ROW_MIN_HEIGHT.session,
                     cursor: "pointer",
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
                     position: "relative",
                     background: id === current ? "var(--dsw-alias-interactive-bg-hover)" : undefined,
-                    borderRadius: 6,
+                    borderRadius: RADIUS.navRow,
                     ...(isDragging
                       ? {
                           opacity: 0.55,
@@ -1369,7 +1692,7 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
                       left: 8,
                       right: 8,
                       height: 2,
-                      borderRadius: 2,
+                      borderRadius: RADIUS.pill,
                       background: "var(--dsw-alias-state-business-primary)",
                       pointerEvents: "none",
                       zIndex: 1,
@@ -1381,9 +1704,9 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
                     {statusDot(id, s)}
                   </span>
                   <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{label}</span>
-                  <span className="fm-wb-row-actions" style={{ display: "inline-flex", gap: 2, flex: "none" }}>
-                    <Button size="sm" variant="ghost" icon={<IconListPenOutline16 size={16} />} style={ICON_BTN_STYLE} title="重命名会话" aria-label="重命名会话" onClick={(e) => { e.stopPropagation(); setRenameTarget({ kind: "session", id, title: label, brief: annotationsForWorkspace(arg.workspaceId).sessions[id]?.brief ?? "", workspaceId: arg.workspaceId }); }} />
-                    <Button size="sm" variant="ghost" icon={<IconArchiveOutline20 size={16} />} style={ICON_BTN_STYLE} title="归档会话" aria-label="归档会话" onClick={(e) => { e.stopPropagation(); setConfirmTarget({ kind: "session", id, title: label }); }} />
+                  <span className="fm-wb-row-actions" style={{ display: "inline-flex", gap: ROW_ACTION_GAP, flex: "none" }}>
+                    <Button size="sm" variant="ghost" icon={<IconListPenOutline16 size={16} />} style={ROW_ACTION_BUTTON_STYLE} title="重命名会话" aria-label="重命名会话" onClick={(e) => { e.stopPropagation(); setRenameTarget({ kind: "session", id, title: label, brief: annotationsForWorkspace(arg.workspaceId).sessions[id]?.brief ?? "", workspaceId: arg.workspaceId }); }} />
+                    <Button size="sm" variant="ghost" icon={<IconArchiveOutline20 size={16} />} style={ROW_ACTION_BUTTON_STYLE} title="归档会话" aria-label="归档会话" onClick={(e) => { e.stopPropagation(); setConfirmTarget({ kind: "session", id, title: label }); }} />
                   </span>
                 </div>
               );
@@ -1394,32 +1717,37 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
   };
 
   return (
-    <div style={{ fontSize: 13, userSelect: "none", color: "var(--dsw-alias-label-primary)", height: "100%", display: "flex", flexDirection: "column" }}>
+    <div style={{ fontSize: FONT_SECONDARY, lineHeight: 1.5, userSelect: "none", color: "var(--dsw-alias-label-primary)", height: "100%", display: "flex", flexDirection: "column" }}>
       <style>{BROWSER_CSS}</style>
       {/* 标题栏行保持侧栏黑色底，底部一条黑灰边界线与内容区区分（内容区不铺色）。
           padding-right 34：按钮组右端贴近右上角固定折叠键（fm-fold-btn，左缘距容器右 30px，
           留 4px 间隙；坐标恒定不动）。 */}
-      <div style={{ flex: "none", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 34px 4px 4px", background: "var(--dsw-specific-sidebar-fill)", borderBottom: "1px solid var(--dsw-alias-border-l1)" }}>
+      <div style={{ flex: "none", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 34px 4px 4px", background: "var(--dsw-specific-sidebar-fill)", borderBottom: HEADER_BORDER }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
           <IconFolderOpen16 size={16} />
-          工作沙盒
+          工作区
         </span>
         {/* 标题栏右侧按钮组：key=toolbarKey（每次展开递增 → 重挂载 → stagger 滑入动画重放，
             与区容器展开过渡同时进行）。 */}
         <span key={props.toolbarKey ?? 0} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
           {/* 展开过渡动画：按钮依次滑入（fm-tb-btn，延迟内联显式指定）。 */}
-          {/* 沙盒管家：隐藏内容区，展示差异交互框 */}
+          {/* 区管家：隐藏内容区，展示差异交互框 */}
           <Button
             className="fm-tb-btn"
             style={{ ...ICON_BTN_STYLE, animationDelay: "0ms" }}
             size="sm"
             variant="ghost"
             icon={<TopHatIcon size={16} />}
-            title="沙盒管家"
-            aria-label="沙盒管家"
-            onClick={() => handleOrganize()}
+            title="区管家"
+            aria-label="区管家"
+            onClick={() => {
+              // 打开面板即可：面板自带"这是什么 / 两条命令 / 消耗用量"，
+              // 不再像以前那样一进来就跑去算一份几十条的分组差异。
+              setOrganizeOpen(true);
+              void refreshOrganizerStatus();
+            }}
           />
-          {/* 新对话：在当前选中分组所在工作沙盒内新建，并自动归入该分组 */}
+          {/* 新对话：在当前选中分组所在工作区内新建，并自动归入该分组 */}
           <Button
             className="fm-tb-btn"
             style={{ ...ICON_BTN_STYLE, animationDelay: "40ms" }}
@@ -1431,28 +1759,38 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
             data-myagent-new-chat
             onClick={() => handleNewChat()}
           />
-          <Button className="fm-tb-btn" style={{ ...ICON_BTN_STYLE, animationDelay: "80ms" }} size="sm" variant="ghost" icon={<IconProjectAddOutline16 size={16} />} title="新工作沙盒" aria-label="新工作沙盒" onClick={() => run(() => props.addWorkspace?.())} />
+          <Button className="fm-tb-btn" style={{ ...ICON_BTN_STYLE, animationDelay: "80ms" }} size="sm" variant="ghost" icon={<IconProjectAddOutline16 size={16} />} title="新工作区" aria-label="新工作区" onClick={() => run(() => props.addWorkspace?.())} />
         </span>
       </div>
       {/* 列表滚动区：滚动条上界在标题栏下方（标题栏不参与滚动）；scrollLock（区容器过渡期间）
           置 hidden 避免滚动条闪现抖动；fm-scroll 提供渐变滚动条样式。 */}
       <div
+        ref={scrollRef}
         className="fm-scroll"
         role="tree"
-        aria-label="工作沙盒与会话"
+        aria-label="工作区与会话"
         style={{ flex: 1, minHeight: 0, overflowY: props.scrollLock ? "hidden" : "auto", overflowX: "hidden", scrollbarGutter: "stable" }}
       >
         {organizeOpen ? (
           <OrganizePanel
-            loading={organizeLoading}
-            applying={organizeApplying}
-            error={organizeError}
-            items={organizeItems}
-            onApply={handleApplyOrganize}
             onClose={() => setOrganizeOpen(false)}
-            onRetry={handleOrganize}
-            onResummarizeAll={handleResummarizeAll}
-            resummarizingAll={resummarizingAll}
+            onUpdateAll={handleUpdateChanged}
+            updating={updateRunning}
+            updateProgress={updateProgress}
+            updateSummary={updateSummary}
+            updateDetails={updateDetails}
+            updateError={updateError}
+            onOrganizeGroups={handleOrganizeGroups}
+            organizing={organizing || organizeApplying}
+            organizeSummary={organizeSummary}
+            organizeDetails={organizeDetails}
+            organizeError={organizeError}
+            onUndoOrganize={handleUndoOrganize}
+            canUndoOrganize={canUndoOrganize}
+            agent={agentInfo}
+            usage={agentUsage}
+            changedCount={changedCount}
+            loadingInfo={loadingInfo}
           />
         ) : (
           <>
@@ -1465,16 +1803,17 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
           const isCollapsed = collapsed.has(w.workspaceId);
           const visible = (w.sessionIds ?? []).filter((id) => !archived.includes(id));
           const wsGroups = groupsForWorkspace(w.workspaceId);
-          // 工作沙盒拖拽目标 = 整组（行 + 会话区，与原生 groupSection 作为 drop 目标一致）。
+          // 工作区拖拽目标 = 整组（行 + 会话区，与原生 groupSection 作为 drop 目标一致）。
           const wsMarker = drag?.kind === "workspace" && drag.over?.id === w.workspaceId ? drag.over.half : null;
           return (
             <div
               key={w.workspaceId}
               role="group"
+              data-workspace-id={w.workspaceId}
               style={{
                 position: "relative",
                 marginBottom: 6,
-                // 工作沙盒之间加灰色分割线；子聊天框（会话行）不加。
+                // 工作区之间加灰色分割线；子聊天框（会话行）不加。
                 ...(i > 0 ? { borderTop: "1px solid var(--dsw-alias-border-l2)" } : {}),
               }}
               className={wsMarker === "before" ? "fm-wb-drop-before" : wsMarker === "after" ? "fm-wb-drop-after" : undefined}
@@ -1501,7 +1840,7 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
                   : undefined
               }
             >
-              {/* 工作沙盒行：图标列（Folder，hover 换三角箭头）+ 标题 + hover 操作组。
+              {/* 工作区行：图标列（Folder，hover 换三角箭头）+ 标题 + hover 操作组。
                   点击整行折叠/展开；拖拽排序。 */}
               <div
                 role="treeitem"
@@ -1512,13 +1851,24 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 4,
-                  padding: "3px 4px",
-                  borderRadius: 6,
+                  gap: 6,
+                  padding: "6px 8px",
+                  // 行高显式钉住：20px 紧凑按钮撑不到 40px，不钉就会塌掉。
+                  // 必须配 box-sizing:border-box —— min-height 默认只作用于 content box，
+                  // 否则行高会变成 minHeight + 2×padding（实测 52 而不是 40）。
+                  boxSizing: "border-box",
+                  minHeight: ROW_MIN_HEIGHT.workspace,
+                  borderRadius: RADIUS.navRow,
                   cursor: "pointer",
                   fontWeight: 600,
                 }}
-                onClick={() => (isCollapsed ? expand(w.workspaceId) : collapse(w.workspaceId))}
+                onClick={() => {
+                  // 点"区"标签：原有的展开/收起照旧，**并把文件树切到这个区**。
+                  // 每次点击都切（不只是展开那一下）—— 心智模型就一句"点哪个区，文件树就是哪个区"。
+                  if (typeof w.path === "string" && w.path !== "") setActiveRoot(w.path);
+                  if (isCollapsed) expand(w.workspaceId);
+                  else collapse(w.workspaceId);
+                }}
                 onDragStart={(e) => {
                   e.dataTransfer.effectAllowed = "move";
                   e.dataTransfer.setData("text/plain", w.workspaceId);
@@ -1537,12 +1887,12 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
                   <IconTriangleRightFill14 size={14} className={`fm-wb-arrow${isCollapsed ? "" : " fm-wb-arrow-open"}`} />
                 </span>
                 <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{w.title ?? w.path}</span>
-                <span className="fm-wb-row-actions" style={{ display: "inline-flex", gap: 2, flex: "none" }}>
+                <span className="fm-wb-row-actions" style={{ display: "inline-flex", gap: ROW_ACTION_GAP, flex: "none" }}>
                   <Button
                     size="sm"
                     variant="ghost"
                     icon={<IconPlusOutline16 size={16} />}
-                    style={ICON_BTN_STYLE}
+                    style={ROW_ACTION_BUTTON_STYLE}
                     title="新建分组"
                     aria-label="新建分组"
                     onClick={(e) => {
@@ -1550,8 +1900,8 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
                       setGroupAction({ kind: "create", workspaceId: w.workspaceId });
                     }}
                   />
-                  <Button size="sm" variant="ghost" icon={<IconEditOutline16 size={16} />} style={ICON_BTN_STYLE} title="重命名工作沙盒" aria-label="重命名工作沙盒" onClick={(e) => { e.stopPropagation(); setRenameTarget({ kind: "workspace", id: w.workspaceId, title: w.title ?? w.path, brief: annotationsForWorkspace(w.workspaceId).workspaces[w.workspaceId]?.brief ?? "", workspaceId: w.workspaceId }); }} />
-                  <Button size="sm" variant="ghost" icon={<IconTrashOutline16 size={16} />} style={{ ...ICON_BTN_STYLE, color: "var(--dsw-alias-state-error-primary)" }} title="删除工作沙盒" aria-label="删除工作沙盒" onClick={(e) => { e.stopPropagation(); setConfirmTarget({ kind: "workspace", id: w.workspaceId, title: w.title ?? w.path }); }} />
+                  <Button size="sm" variant="ghost" icon={<IconEditOutline16 size={16} />} style={ROW_ACTION_BUTTON_STYLE} title="重命名工作区" aria-label="重命名工作区" onClick={(e) => { e.stopPropagation(); setRenameTarget({ kind: "workspace", id: w.workspaceId, title: w.title ?? w.path, brief: annotationsForWorkspace(w.workspaceId).workspaces[w.workspaceId]?.brief ?? "", workspaceId: w.workspaceId }); }} />
+                  <Button size="sm" variant="ghost" icon={<IconTrashOutline16 size={16} />} style={{ ...ROW_ACTION_BUTTON_STYLE, color: "var(--dsw-alias-state-error-primary)" }} title="删除工作区" aria-label="删除工作区" onClick={(e) => { e.stopPropagation(); setConfirmTarget({ kind: "workspace", id: w.workspaceId, title: w.title ?? w.path }); }} />
                 </span>
               </div>
               {!isCollapsed ? (
@@ -1582,9 +1932,9 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
       {renameTarget ? (
         <PromptModal
           open
-          title={renameTarget.kind === "workspace" ? "重命名工作沙盒" : "重命名会话"}
+          title={renameTarget.kind === "workspace" ? "重命名工作区" : "重命名会话"}
           initialValue={renameTarget.title}
-          placeholder={renameTarget.kind === "workspace" ? "工作沙盒名称" : "会话标题"}
+          placeholder={renameTarget.kind === "workspace" ? "工作区名称" : "会话标题"}
           validate={(v) => validateNameInput("name", v)}
           brief={renameTarget.brief ?? ""}
           {...(renameTarget.kind === "session"
@@ -1674,8 +2024,8 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
       {confirmTarget ? (
         <ConfirmModal
           open
-          title={confirmTarget.kind === "workspace" ? `删除工作沙盒 ${confirmTarget.title}？` : `归档会话 ${confirmTarget.title}？`}
-          description={confirmTarget.kind === "workspace" ? "该工作沙盒下的会话将被一并删除，此操作不可恢复。" : "归档后的会话将从当前列表中隐藏。"}
+          title={confirmTarget.kind === "workspace" ? `删除工作区 ${confirmTarget.title}？` : `归档会话 ${confirmTarget.title}？`}
+          description={confirmTarget.kind === "workspace" ? "该工作区下的会话将被一并删除，此操作不可恢复。" : "归档后的会话将从当前列表中隐藏。"}
           confirmLabel={confirmTarget.kind === "workspace" ? "删除" : "归档"}
           onConfirm={() => {
             const target = confirmTarget;
@@ -1737,6 +2087,8 @@ function GroupHeader(props: {
   onToggle: () => void;
   onRename?: () => void;
   onDelete?: () => void;
+  /** 在该分组下新建对话（工具栏"新对话（当前选中分组）"的同款按钮，放在重命名左边）。 */
+  onNewChat?: () => void;
   highlight?: boolean;
   draggable?: boolean;
   onDragStart?: (e: React.DragEvent) => void;
@@ -1758,28 +2110,55 @@ function GroupHeader(props: {
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 4,
-        padding: "3px 4px 3px 12px",
-        borderRadius: 6,
+        gap: 6,
+        padding: "4px 8px 4px 16px",
+        // 行高显式钉住：20px 紧凑按钮撑不到 36px，不钉就会塌掉。
+        // box-sizing:border-box 见工作区行同款注释（否则 minHeight 不含 padding）。
+        boxSizing: "border-box",
+        minHeight: ROW_MIN_HEIGHT.group,
+        borderRadius: RADIUS.navRow,
         cursor: "pointer",
         fontWeight: 600,
+        // 方案 B：二级 = 小节标签。字号降到 12、颜色转次色，与一级（13px/主色）分层；
+        // 配合下面的 chevron（不再是 folder）与计数胶囊，一眼区分"这是分组，不是另一个工作区"。
+        fontSize: 12,
+        color: "var(--dsw-alias-label-secondary)",
         ...(props.selected ? { background: "var(--dsw-alias-interactive-bg-hover)" } : {}),
         ...(props.highlight ? { outline: "1px solid var(--dsw-alias-state-business-primary)" } : {}),
       }}
     >
-      <span style={{ flex: "none", width: 16, display: "inline-flex", justifyContent: "center", color: "var(--dsw-alias-label-secondary)" }}>
-        {props.collapsed ? <IconFolderClose16 size={16} /> : <IconFolderOpen16 size={16} />}
+      {/* 图标由 folder 改为展开/收起 chevron：分组是可折叠小节，不是"另一层文件夹"。
+          chevron 中心 = 16(padding-left) + 8(16px 图标槽一半) = 24px，导轨 ::before 正对这条线。 */}
+      <span style={{ flex: "none", width: 16, display: "inline-flex", justifyContent: "center", color: "var(--dsw-alias-label-tertiary)" }}>
+        {props.collapsed ? <IconTriangleRightFill14 size={14} /> : <IconChevronDownOutline14 size={14} />}
       </span>
       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
-        {props.name} ({props.count})
+        {props.name}
       </span>
-      {props.onRename || props.onDelete ? (
-        <span className="fm-wb-row-actions" style={{ display: "inline-flex", gap: 2, flex: "none" }}>
+      <span className="fm-wb-cnt" title={`${props.count} 个会话`}>{props.count}</span>
+      {props.onRename || props.onDelete || props.onNewChat ? (
+        <span className="fm-wb-row-actions" style={{ display: "inline-flex", gap: ROW_ACTION_GAP, flex: "none" }}>
+          {/* 新对话（本分组）：与工具栏那颗同款同标签，放在"重命名分组"左边。 */}
+          {props.onNewChat ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<IconNewChatOutline16 size={16} />}
+              style={ROW_ACTION_BUTTON_STYLE}
+              title="新对话（当前选中分组）"
+              aria-label="新对话（当前选中分组）"
+              data-myagent-new-chat-group
+              onClick={(e) => {
+                e.stopPropagation();
+                props.onNewChat?.();
+              }}
+            />
+          ) : null}
           {props.onRename ? (
-            <Button size="sm" variant="ghost" icon={<IconEditOutline16 size={16} />} style={ICON_BTN_STYLE} title="重命名分组" aria-label="重命名分组" onClick={(e) => { e.stopPropagation(); props.onRename?.(); }} />
+            <Button size="sm" variant="ghost" icon={<IconEditOutline16 size={16} />} style={ROW_ACTION_BUTTON_STYLE} title="重命名分组" aria-label="重命名分组" onClick={(e) => { e.stopPropagation(); props.onRename?.(); }} />
           ) : null}
           {props.onDelete ? (
-            <Button size="sm" variant="ghost" icon={<IconTrashOutline16 size={16} />} style={{ ...ICON_BTN_STYLE, color: "var(--dsw-alias-state-error-primary)" }} title="删除分组" aria-label="删除分组" onClick={(e) => { e.stopPropagation(); props.onDelete?.(); }} />
+            <Button size="sm" variant="ghost" icon={<IconTrashOutline16 size={16} />} style={{ ...ROW_ACTION_BUTTON_STYLE, color: "var(--dsw-alias-state-error-primary)" }} title="删除分组" aria-label="删除分组" onClick={(e) => { e.stopPropagation(); props.onDelete?.(); }} />
           ) : null}
         </span>
       ) : null}

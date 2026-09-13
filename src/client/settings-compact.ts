@@ -20,7 +20,12 @@
 
 const CSS = `
 .hHd-Xa_footArea{position:relative;padding:8px 0 3px;border-top:1px solid var(--dsw-alias-border-l1)}
-.hHd-Xa_settingsArea{position:absolute;top:8px;left:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;z-index:1}
+.hHd-Xa_settingsArea{position:absolute;top:8px;left:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;z-index:auto}
+/* 官方设置弹窗 overlay 虽然是 z-index:1000，但若 settingsArea 创建局部层叠上下文，
+   弹窗会被困在 sidebar 的 z-index:1 层里，被右侧查看器/主区里更高的 z-index 内容盖住。
+   这里去掉 settingsArea 的层叠上下文（上面 z-index:auto），并把 overlay 提到 1200，
+   确保设置弹窗始终在所有普通 UI / 菜单（z-index ≤1100）之上。 */
+.VOzbGW_overlay{z-index:1200 !important}
 .hHd-Xa_settingsArea .VOzbGW_trigger{box-sizing:border-box;width:32px;height:32px;min-width:0;margin:0;padding:0;border-radius:6px;justify-content:center;gap:0;display:flex;align-items:center;background:transparent}
 .hHd-Xa_settingsArea .VOzbGW_trigger:hover{background:var(--dsw-alias-bg-layer-1)}
 .hHd-Xa_footerActions{padding-left:36px;align-items:center}

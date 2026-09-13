@@ -1,15 +1,19 @@
-// src/client/FileTree.tsx — 懒加载沙盒文件树（Task 7 初版；UI polish 轮升级；Round 2 加
-// "复制项目地址"）。api 由 props 传入（SidebarComposite 用 resolveRoot 推导工作沙盒根后
-// 构造）；点击文件触发 onOpenFile（Round 2 起打开 details 列查看器 FileViewerPanel）。
+// src/client/FileTree.tsx — 懒加载区文件树（Task 7 初版；UI polish 轮升级；Round 2 加
+// "复制项目地址"；0.1.5 轮文件图标对齐官方）。api 由 props 传入（SidebarComposite 用
+// resolveRoot 推导工作区根后构造）；点击文件触发 onOpenFile（0.1.5 起在右侧栏打开
+// myagent 查看器标签页，见 client.ts 的 openFileInViewer）。
+// 文件图标用宿主的 FileTypeIcon + classifyFileType（与官方 ui-sidebar-files 文件树同款，
+// 按扩展名着色）；目录仍用"展开/收起"两态文件夹图标（官方只有收起态，此处保留更好的一档）。
 // 右键改悬浮菜单（primitives Menu，原生样式），新建/重命名/移动走 Modal+Input，删除为
 // 菜单内二次确认——不再使用 window.prompt/confirm。
 // 颜色/交互全部走 --dsw-* token（宿主主题注入），无硬编码色值。
 // 折叠（rail）模式（宿主整体 rail 用，区级折叠不再传 collapsed）：collapsed=true 时不
-// 渲染树，只显示竖向图标列（展开沙盒文件 / ＋新建 / 刷新，与工作沙盒区 rail 风格一致）；
+// 渲染树，只显示竖向图标列（展开区文件树 / ＋新建 / 刷新，与工作区区 rail 风格一致）；
 // headerExtra 由 SidebarComposite 注入折叠切换按钮（标题栏右侧）。树状态
 // （roots/openDirs）在折叠期间保留，展开后原样恢复。
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { FileBadge } from "./FileBadge.tsx";
+import { FileIcon } from "./file-icon.tsx";
 import {
   Button,
   IconBrowseOutline16,
@@ -31,9 +35,14 @@ import { describeApiError } from "./api.ts";
 import { joinRel, resolveAbsPath, sortEntries, validateNameInput, type TreeEntry } from "./tree-utils.ts";
 import { ContextMenu, PromptModal, useCloseOnScroll, type ContextMenuItem } from "./ContextMenu.tsx";
 import { ICON_BTN_STYLE } from "./WorkspaceBrowser.tsx";
+import { FONT_SECONDARY, HEADER_BORDER, RADIUS, TREE_ROW } from "./ui-kit.ts";
 // 行 hover 用宿主 CSS 类（token 化，避免每行 onMouseEnter 重渲染）；选中态走内联
 // interactive 背景 token（inline 优先于类，hover 不会盖掉选中）。
-const TREE_CSS = `.fm-tree-row:hover{background:var(--dsw-specific-sidebar-nav-item-hover)}`;
+// 行圆角由官方 6px 视觉档统一到官方文件树的 10px（RADIUS.treeRow）。
+const TREE_CSS = `
+.fm-tree-row{border-radius:${RADIUS.treeRow}px}
+.fm-tree-row:hover{background:var(--dsw-specific-sidebar-nav-item-hover)}
+`;
 
 /**
  * 复制文本到剪贴板：优先 navigator.clipboard（需要 secure context + 用户手势），
@@ -76,23 +85,19 @@ function parentOf(path: string): string {
   return i === -1 ? "" : path.slice(0, i);
 }
 
-export function FileTree({ api, onOpenFile, collapsed = false, headerExtra, toolbarKey, scrollLock, onExpand }: {
+export function FileTree({ api, onOpenFile, headerExtra, toolbarKey, scrollLock }: {
   api: Api;
   onOpenFile: (path: string) => void;
-  /** 折叠（rail）模式（宿主整体 rail 用，区级折叠不再传）：不渲染树，只显示竖向图标列。 */
-  collapsed?: boolean;
   /** 标题栏右侧追加内容（SidebarComposite 注入区级折叠切换按钮）。 */
   headerExtra?: React.ReactNode;
   /** 标题栏按钮组 key（每次展开递增，强制重挂载按钮组以重放 stagger 滑入动画）。 */
   toolbarKey?: number;
   /** 区容器高度过渡期间置 true：树滚动区临时 hidden（避免滚动条闪现抖动）。 */
   scrollLock?: boolean;
-  /** rail 模式下点击"展开沙盒文件"图标的回调（宿主 rail / 外部注入；区级折叠不再传）。 */
-  onExpand?: () => void;
 }) {
   const [roots, setRoots] = useState<TreeEntry[] | null>(null);
   const [openDirs, setOpenDirs] = useState<Record<string, TreeEntry[]>>({});
-  // 最高级一层树：当前工作沙盒地址根节点行（默认展开；收起后目录树整体隐藏）。
+  // 最高级一层树：当前工作区地址根节点行（默认展开；收起后目录树整体隐藏）。
   const [rootOpen, setRootOpen] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -162,7 +167,7 @@ export function FileTree({ api, onOpenFile, collapsed = false, headerExtra, tool
   // 右键菜单项（随条目类型与展开态变化）。
   const menuItemsFor = (entry: TreeEntry): ContextMenuItem[] => {
     const isDir = entry.kind === "dir";
-    // 根节点（path === ""，工作沙盒地址行）：展开/收起切 rootOpen；禁止重命名/删除/移动。
+    // 根节点（path === ""，工作区地址行）：展开/收起切 rootOpen；禁止重命名/删除/移动。
     const isRoot = entry.path === "";
     const parent = parentOf(entry.path);
     const open = Boolean(openDirs[entry.path]);
@@ -256,14 +261,13 @@ export function FileTree({ api, onOpenFile, collapsed = false, headerExtra, tool
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 4,
-            paddingLeft: 8 + depth * 14,
-            paddingRight: 4,
+            gap: TREE_ROW.gap,
+            // 官方文件树：每级缩进 18px、行内边距 5px 10px（内层 wrapper 再让 8px）。
+            padding: `${TREE_ROW.paddingY}px ${TREE_ROW.paddingX}px ${TREE_ROW.paddingY}px ${TREE_ROW.paddingX + depth * TREE_ROW.indent}px`,
             cursor: "pointer",
-            // 选中态：interactive-bg-active（sidebar 内行选中等价物）；圆角无对应 token，回退 6px。
+            // 选中态：interactive-bg-active（sidebar 内行选中等价物）；圆角对齐官方 10px。
             background: selected === entry.path ? "var(--dsw-alias-interactive-bg-active)" : undefined,
             color: "var(--dsw-alias-label-primary)",
-            borderRadius: 6,
             whiteSpace: "nowrap",
           }}
           onClick={() => {
@@ -284,11 +288,11 @@ export function FileTree({ api, onOpenFile, collapsed = false, headerExtra, tool
             setMenu({ x: e.clientX, y: e.clientY, entry });
           }}
         >
-          <span style={{ flex: "none", width: 14, display: "inline-flex", justifyContent: "center", color: "var(--dsw-alias-label-secondary)" }}>
+          <span style={{ flex: "none", width: 14, display: "inline-flex", justifyContent: "center", color: "var(--dsw-alias-label-tertiary)" }}>
             {entry.kind === "dir" ? (openDirs[entry.path] ? <IconChevronDownOutline14 size={14} /> : <IconTriangleRightFill14 size={14} />) : null}
           </span>
-          <span style={{ flex: "none", display: "inline-flex", color: "var(--dsw-alias-label-secondary)" }}>
-            {entry.kind === "dir" ? (openDirs[entry.path] ? <IconFolderOpenOutline16 size={16} /> : <IconFolderClose16 size={16} />) : <IconBrowseOutline16 size={16} />}
+          <span style={{ flex: "none", display: "inline-flex", color: "var(--dsw-alias-label-tertiary)" }}>
+            {entry.kind === "dir" ? (openDirs[entry.path] ? <IconFolderOpenOutline16 size={16} /> : <IconFolderClose16 size={16} />) : <FileIcon name={entry.name} size={16} />}
           </span>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{entry.name}</span>
         </div>
@@ -299,24 +303,21 @@ export function FileTree({ api, onOpenFile, collapsed = false, headerExtra, tool
   return (
     // 外层与 WorkspaceBrowser 同构：height:100% + flex 列（不滚动）——内部树滚动区
     // （flex:1 + minHeight:0 + fm-scroll）才能正确收缩并出现渐变滚动条；此前外层
-    // overflow:auto + 高度 auto 让 flex:1 失效，沙盒文件区实际滚动的是浏览器默认粗滚动条。
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", fontSize: 13, userSelect: "none", color: "var(--dsw-alias-label-primary)" }}>
+    // overflow:auto + 高度 auto 让 flex:1 失效，区文件树实际滚动的是浏览器默认粗滚动条。
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", fontSize: FONT_SECONDARY, lineHeight: 1.5, userSelect: "none", color: "var(--dsw-alias-label-primary)" }}>
       <style>{TREE_CSS}</style>
-      {collapsed ? (
-        /* 折叠（rail）模式：按用户要求只保留"展开沙盒文件"按钮，不显示新建/刷新。 */
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, paddingTop: 0 }}>
-          <Button size="sm" variant="ghost" icon={<IconBrowseOutline16 size={16} />} style={ICON_BTN_STYLE} title="展开沙盒文件" aria-label="展开沙盒文件" onClick={() => onExpand?.()} />
-        </div>
-      ) : (
+      {/* 收起态（rail）不再由本组件渲染：整块 rail 交给 RailPanel（两颗区标 + 进行中任务点列），
+          故此处只剩展开态一种形态，原先的 collapsed 分支已删除。 */}
+      <>
         <>
           <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
             {/* 标题栏行保持侧栏黑色底，底部一条黑灰边界线与内容区区分（内容区不铺色）。
                 padding-right 34：按钮组右端贴近右上角固定折叠键（留 4px 间隙）。 */}
-            <div style={{ flex: "none", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 34px 4px 4px", background: "var(--dsw-specific-sidebar-fill)", borderBottom: "1px solid var(--dsw-alias-border-l1)" }}>
+            <div style={{ flex: "none", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 34px 4px 4px", background: "var(--dsw-specific-sidebar-fill)", borderBottom: HEADER_BORDER }}>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--dsw-alias-label-primary)" }}>
-                {/* 与工作沙盒区的文件夹图标区分：沙盒文件区用浏览/文档图标（内部涂灰，带横线） */}
+                {/* 与工作区区的文件夹图标区分：区文件树用浏览/文档图标（内部涂灰，带横线） */}
                 <FileBadge lines />
-                沙盒文件
+                区文件树
               </span>
               {/* 标题栏右侧按钮组：key=toolbarKey（每次展开递增 → 重挂载 → stagger 滑入动画重放，
                   与区容器展开过渡同时进行）。 */}
@@ -346,7 +347,7 @@ export function FileTree({ api, onOpenFile, collapsed = false, headerExtra, tool
                 滚动条闪现抖动；fm-scroll 提供渐变滚动条样式。 */}
             <div
               className="fm-scroll"
-              style={{ flex: 1, minHeight: 0, overflowY: scrollLock ? "hidden" : "auto", scrollbarGutter: "stable" }}
+              style={{ flex: 1, minHeight: 0, overflowY: scrollLock ? "hidden" : "auto", scrollbarGutter: "stable", padding: "8px 0 8px 8px" }}
             >
               {error ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--dsw-alias-state-error-primary)", padding: "2px 4px" }}>
@@ -368,7 +369,7 @@ export function FileTree({ api, onOpenFile, collapsed = false, headerExtra, tool
                 <div style={{ padding: 8, color: "var(--dsw-alias-label-secondary)" }}>加载中…</div>
               ) : (
                 <>
-                  {/* 最高级一层树：当前工作沙盒完整地址（根节点行）。点击展开/收起其下目录树；
+                  {/* 最高级一层树：当前工作区完整地址（根节点行）。点击展开/收起其下目录树；
                       子级从 depth 1 起缩进；右键弹与目录一致的操作菜单（新建在根目录、
                       复制根地址；重命名/删除/移动对根不可用）。 */}
                   <div
@@ -391,19 +392,17 @@ export function FileTree({ api, onOpenFile, collapsed = false, headerExtra, tool
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 4,
-                      paddingLeft: 8,
-                      paddingRight: 4,
+                      gap: TREE_ROW.gap,
+                      padding: `${TREE_ROW.paddingY}px ${TREE_ROW.paddingX}px`,
                       cursor: "pointer",
                       color: "var(--dsw-alias-label-primary)",
-                      borderRadius: 6,
                       whiteSpace: "nowrap",
                     }}
                   >
-                    <span style={{ flex: "none", width: 14, display: "inline-flex", justifyContent: "center", color: "var(--dsw-alias-label-secondary)" }}>
+                    <span style={{ flex: "none", width: 14, display: "inline-flex", justifyContent: "center", color: "var(--dsw-alias-label-tertiary)" }}>
                       {rootOpen ? <IconChevronDownOutline14 size={14} /> : <IconTriangleRightFill14 size={14} />}
                     </span>
-                    <span style={{ flex: "none", display: "inline-flex", color: "var(--dsw-alias-label-secondary)" }}>
+                    <span style={{ flex: "none", display: "inline-flex", color: "var(--dsw-alias-label-tertiary)" }}>
                       {rootOpen ? <IconFolderOpenOutline16 size={16} /> : <IconFolderClose16 size={16} />}
                     </span>
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{api.root}</span>
@@ -414,7 +413,7 @@ export function FileTree({ api, onOpenFile, collapsed = false, headerExtra, tool
             </div>
           </div>
         </>
-      )}
+      </>
 
       {menu ? (
         <ContextMenu
@@ -434,7 +433,7 @@ export function FileTree({ api, onOpenFile, collapsed = false, headerExtra, tool
         <PromptModal
           open
           title="新建文件"
-          description={dialog.base === "" ? "在工作沙盒根目录下创建" : `在 ${dialog.base} 下创建`}
+          description={dialog.base === "" ? "在工作区根目录下创建" : `在 ${dialog.base} 下创建`}
           placeholder="新文件名称，如 new-file.txt"
           validate={(v) => validateNameInput("name", v)}
           onSubmit={(name) => {
@@ -452,7 +451,7 @@ export function FileTree({ api, onOpenFile, collapsed = false, headerExtra, tool
         <PromptModal
           open
           title="新建文件夹"
-          description={dialog.base === "" ? "在工作沙盒根目录下创建" : `在 ${dialog.base} 下创建`}
+          description={dialog.base === "" ? "在工作区根目录下创建" : `在 ${dialog.base} 下创建`}
           placeholder="新文件夹名称，如 src"
           validate={(v) => validateNameInput("name", v)}
           onSubmit={(name) => {
@@ -480,7 +479,7 @@ export function FileTree({ api, onOpenFile, collapsed = false, headerExtra, tool
         <PromptModal
           open
           title={`移动 ${dialog.entry.name}`}
-          description="目标路径（工作沙盒内相对路径）"
+          description="目标路径（工作区内相对路径）"
           initialValue={dialog.entry.path}
           placeholder="目标路径，如 src/utils.ts"
           validate={(v) => validateNameInput("path", v)}

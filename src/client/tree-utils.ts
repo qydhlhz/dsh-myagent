@@ -11,7 +11,7 @@ export function joinRel(parent: string, name: string): string {
 }
 
 /**
- * 由工作沙盒根（绝对路径）与条目相对路径拼出绝对路径（"复制项目地址"用）。
+ * 由工作区根（绝对路径）与条目相对路径拼出绝对路径（"复制项目地址"用）。
  *  - rel 为空（根目录自身）→ 直接返回 root
  *  - root 已带尾部分隔符（/ 或 \）时不重复拼接分隔符
  */
@@ -103,9 +103,44 @@ export interface SessionsSnapshot {
 /** 槽位标准套件里 useSessions/useWorkspaces 的选择器 hook 形状（bindSnapshotSelector）。 */
 export type SelectorHook<T> = <S>(selector: (state: T) => S, eq?: (a: S, b: S) => boolean) => S;
 
+/** 路径归一化用于比较：分隔符统一为 /、去掉尾部 /；win32 风格（盘符/UNC）再折大小写。 */
+function normForCompare(path: string): string {
+  const r = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  return /^[A-Za-z]:/.test(r) || r.startsWith("//") ? r.toLowerCase() : r;
+}
+
 /**
- * 推导沙盒文件树根：优先取"当前会话所属工作沙盒"的 path（currentSessionId 显式参数优先于
- * sessions.current）；取不到则取第一个工作沙盒；都没有返回 null（调用方显示占位，不调 API）。
+ * 找出"工作区根 == root"的一个会话，用于构造会话作用域文件地址。
+ *
+ * 为什么需要：官方文件预览只接管 `session` 作用域地址，而宿主按**地址里的 sessionId**
+ * 解析相对路径（相对该会话的工作区根）。所以打开 api.root 下的文件时，地址里的会话
+ * 必须真的属于这个根，否则预览会去读另一个根的同名路径。
+ *
+ * 优先当前会话（与官方文件树"用标签页所在会话"的行为一致），否则取该区下第一个会话。
+ *
+ * @returns `{ sessionId, cwd }`；该根下没有任何会话时 null（调用方应放弃打开并提示，而不是乱猜会话）。
+ */
+export function sessionForRoot(
+  sessions: SessionsSnapshot,
+  workspaces: WorkspacesSnapshot,
+  root: string,
+): { sessionId: string; cwd: string } | null {
+  const target = normForCompare(root);
+  for (const w of workspaces.items) {
+    if (typeof w.path !== "string" || normForCompare(w.path) !== target) continue;
+    const ids = w.sessionIds ?? [];
+    if (sessions.current !== undefined && ids.includes(sessions.current)) {
+      return { sessionId: sessions.current, cwd: w.path };
+    }
+    const first = ids[0];
+    if (first !== undefined) return { sessionId: first, cwd: w.path };
+  }
+  return null;
+}
+
+/**
+ * 推导区文件树根：优先取"当前会话所属工作区"的 path（currentSessionId 显式参数优先于
+ * sessions.current）；取不到则取第一个工作区；都没有返回 null（调用方显示占位，不调 API）。
  */
 export function resolveRoot(
   sessions: SessionsSnapshot,

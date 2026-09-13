@@ -1,4 +1,4 @@
-// src/client/TopHatIcon.tsx — 沙盒管家图标（采用用户提供的“服务生/管家”SVG 素材）。
+// src/client/TopHatIcon.tsx — 区管家图标（采用用户提供的“服务生/管家”SVG 素材）。
 import React from "react";
 
 export function TopHatIcon({ size = 16 }: { size?: number }) {

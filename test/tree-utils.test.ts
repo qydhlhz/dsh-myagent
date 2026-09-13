@@ -1,4 +1,5 @@
-// test/tree-utils.test.ts — tree-utils 纯函数测试（joinRel / sortEntries / resolveRoot / validateNameInput）。
+// test/tree-utils.test.ts — tree-utils 纯函数测试（joinRel / sortEntries / resolveRoot /
+// sessionForRoot / validateNameInput）。
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -6,6 +7,7 @@ import {
   joinRel,
   resolveAbsPath,
   resolveRoot,
+  sessionForRoot,
   sortEntries,
   validateNameInput,
   type SessionsSnapshot,
@@ -115,4 +117,53 @@ test("resolveRoot 显式 currentSessionId 参数优先于 sessions.current", () 
     { workspaceId: "w2", path: "C:\\b", title: "b", sessionIds: ["s2"] },
   ]);
   assert.equal(resolveRoot(sessions, workspaces, "s2"), "C:\\b");
+});
+
+// sessionForRoot：构造会话作用域文件地址时"该根属于哪个会话"的唯一来源。
+// 选错会话 → 官方预览会按另一个会话的根解析相对路径，读到别的文件。
+
+test("sessionForRoot 优先当前会话（该根下）", () => {
+  const sessions: SessionsSnapshot = { byId: {}, current: "s2" };
+  const workspaces = wss([{ workspaceId: "w1", path: "C:\\a", title: "a", sessionIds: ["s1", "s2"] }]);
+  assert.deepEqual(sessionForRoot(sessions, workspaces, "C:\\a"), { sessionId: "s2", cwd: "C:\\a" });
+});
+
+test("sessionForRoot 当前会话不在该根下时取该根第一个会话", () => {
+  const sessions: SessionsSnapshot = { byId: {}, current: "s9" };
+  const workspaces = wss([
+    { workspaceId: "w1", path: "C:\\a", title: "a", sessionIds: ["s1"] },
+    { workspaceId: "w2", path: "C:\\b", title: "b", sessionIds: ["s2"] },
+  ]);
+  assert.deepEqual(sessionForRoot(sessions, workspaces, "C:\\b"), { sessionId: "s2", cwd: "C:\\b" });
+});
+
+test("sessionForRoot 没有当前会话时取第一个会话", () => {
+  const sessions: SessionsSnapshot = { byId: {}, current: undefined };
+  const workspaces = wss([{ workspaceId: "w1", path: "C:\\a", title: "a", sessionIds: ["s1", "s2"] }]);
+  assert.deepEqual(sessionForRoot(sessions, workspaces, "C:\\a"), { sessionId: "s1", cwd: "C:\\a" });
+});
+
+test("sessionForRoot 路径比较去掉尾部分隔符且 win32 大小写不敏感", () => {
+  const sessions: SessionsSnapshot = { byId: {}, current: "s1" };
+  const workspaces = wss([{ workspaceId: "w1", path: "C:\\Proj\\", title: "p", sessionIds: ["s1"] }]);
+  assert.deepEqual(sessionForRoot(sessions, workspaces, "c:/proj"), {
+    sessionId: "s1",
+    cwd: "C:\\Proj\\",
+  });
+});
+
+test("sessionForRoot 根下没有会话时返回 null（不猜会话）", () => {
+  const sessions: SessionsSnapshot = { byId: {}, current: "s1" };
+  const workspaces = wss([{ workspaceId: "w1", path: "C:\\a", title: "a", sessionIds: [] }]);
+  assert.equal(sessionForRoot(sessions, workspaces, "C:\\a"), null);
+  assert.equal(sessionForRoot(sessions, workspaces, "C:\\other"), null);
+});
+
+test("sessionForRoot 容错 sessionIds 缺失（host 投影时序）", () => {
+  const sessions: SessionsSnapshot = { byId: {}, current: "s1" };
+  const workspaces: WorkspacesSnapshot = {
+    items: [{ workspaceId: "w1", path: "C:\\a", title: "a" }],
+    archivedSessionIds: [],
+  };
+  assert.equal(sessionForRoot(sessions, workspaces, "C:\\a"), null);
 });

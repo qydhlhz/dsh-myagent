@@ -1,4 +1,4 @@
-// src/client/organizer.ts — 工作沙盒“沙盒管家”的纯函数：快照模型、建议生成、差异展示、
+// src/client/organizer.ts — 工作区“区管家”的纯函数：快照模型、建议生成、差异展示、
 // 以及把建议动作应用到 groups/annotations 的辅助函数。
 // 当前实现为“无子 agent 时的本地确定性整理器”，接口与设计文档中的“结构化整理建议 JSON”
 // 对齐；后续若宿主暴露 continuable subagent，可在同一边界内替换为 agent 输出。
@@ -261,7 +261,7 @@ function tokenize(text: string): string[] {
 function defaultBriefFor(kind: "workspace" | "group" | "session", name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "";
-  if (kind === "workspace") return `工作沙盒：${trimmed}`;
+  if (kind === "workspace") return `工作区：${trimmed}`;
   if (kind === "group") return `分组：${trimmed}`;
   return `对话：${trimmed}`;
 }
@@ -565,7 +565,7 @@ export function buildOrganizePlan(snapshot: OrganizerSnapshot): OrganizePlan {
         entityName: ws.title || ws.id,
         oldBrief: "",
         newBrief: defaultBriefFor("workspace", ws.title || ws.id),
-        reason: "工作沙盒缺少一句话标注",
+        reason: "工作区缺少一句话标注",
       });
     }
 
@@ -724,7 +724,7 @@ function actionTitle(action: OrganizeAction): string {
       return `移动会话：${action.sessionTitle} → ${action.toGroupName}`;
     case "updateBrief": {
       if (action.entity === "session") return `更新会话标题与简介：${action.entityName}`;
-      const where = action.entity === "workspace" ? "工作沙盒" : "分组";
+      const where = action.entity === "workspace" ? "工作区" : "分组";
       return `更新${where}简述：${action.entityName}`;
     }
   }
@@ -780,7 +780,7 @@ export function diffOrganize(_snapshot: OrganizerSnapshot, plan: OrganizePlan): 
   }));
 }
 
-/** 将单个整理动作应用到某个工作沙盒的 groups.json 数据。 */
+/** 将单个整理动作应用到某个工作区的 groups.json 数据。 */
 export function applyOrganizeActionToGroups(groups: SessionGroups, action: OrganizeAction)
 : SessionGroups {
   switch (action.kind) {

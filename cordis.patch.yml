@@ -4,9 +4,15 @@
 - insert:
     - id: myagent
       name: 'dsh-myagent'
+      # ⚠️ 行级 inject 会**覆盖**模块导出的 inject —— 改服务依赖必须两边一起改。
+      #
       # 宿主侧没有 "workspaces" 服务（那是浏览器半区服务名）；宿主工作空间服务是
       # workspaceRegistry。collectRoots 有 lenient 探测与 try/catch 降级，不注入。
-      inject: [webServer, fs]
+      #
+      # sessions / sessionPersistence / agents 必须声明：cordis 4 的 ctx 是 Proxy，
+      # 未声明的服务属性访问会抛 `cannot get property "X" without inject`
+      # （表现为「重新总结命名 / 重新总结简介」两个按钮报错）。三者都来自 dsh-base 核心行。
+      inject: [webServer, fs, sessions, sessionPersistence, agents]
       config:
         # v1 只放行"已注册工作空间"根目录；spike 若确认 workspaces 服务不可用，
         # 则只放行 dsh 启动目录。allowedRoots 为人工补充白名单。
