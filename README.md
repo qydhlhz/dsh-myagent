@@ -1,5 +1,9 @@
 # DSH-MYAGENT (`dsh-myagent`)
 
+[![CI](https://github.com/qydhlhz/dsh-myagent/actions/workflows/ci.yml/badge.svg)](https://github.com/qydhlhz/dsh-myagent/actions/workflows/ci.yml)
+![dsh](https://img.shields.io/badge/dsh-0.1.5--rc-blue)
+![license](https://img.shields.io/badge/license-MIT-green)
+
 **简体中文** | [English](README.en.md)
 
 > **MYAGENT.UI** —— 为 dsh 配置更好的工作区与文件树系统。
@@ -109,11 +113,15 @@ dsh --profile web --dump-config   # 应出现 # == dsh-myagent 与插件行
 ## 从源码构建与测试
 
 ```sh
-npm install
+npm ci            # 严格按 lockfile 装依赖
 npm run check     # tsc --noEmit + node --test（全部单元用例）
 npm run build     # tsdown（宿主半区 lib/index.js）+ esbuild（浏览器半区 lib/client.js）
 npm run smoke     # bundle 契约 + patch 合成冒烟
 ```
+
+测试用 Node ≥ 24 开箱即跑（直接运行 TypeScript，靠 Node 内置的类型剥离；Node 22.x 需自行加
+`--experimental-strip-types`）。CI（`.github/workflows/ci.yml`）会跑类型检查、单测、构建，并用
+`git diff --exit-code -- lib` 挡住"改了源码忘了重建产物"。参与开发见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
 
 仓库已提交构建产物 `lib/`，安装无需构建步骤。**消费侧零第三方运行时依赖**：宿主半区无外部依赖；浏览器半区仅使用宿主 Web 应用模块表里的 `react` / `react-dom` / `@deepseek-ai/dsh-client-ui-primitives`。
 

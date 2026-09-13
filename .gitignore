@@ -31,3 +31,6 @@ probe-ssr.tsx
 
 # brainstorming 可视化对照会话产物（本地设计过程，不进公开仓库）
 .superpowers/
+
+# 内部设计/计划文档（过程材料，文件留本地、不进公开仓库）
+docs/superpowers/

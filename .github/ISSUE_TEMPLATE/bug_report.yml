@@ -1,0 +1,59 @@
+name: Bug 报告
+description: 报告 MYAGENT.UI 插件的问题（界面异常 / 功能不工作 / 加载失败）
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请先确认：你已经**重启过 `dsh web`**（本插件的客户端半区在进程启动时读进内存，
+        刷新页面不会生效）。
+  - type: input
+    id: plugin-version
+    attributes:
+      label: 插件版本
+      description: 装的是哪个 tag / commit（例如 `v0.1.5`）
+      placeholder: v0.1.5
+    validations:
+      required: true
+  - type: input
+    id: dsh-version
+    attributes:
+      label: dsh 版本
+      description: `dsh --version` 的输出
+      placeholder: 0.1.5-rc.1
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 从"打开 GUI"开始，写到问题出现为止；能稳定复现最好
+      placeholder: |
+        1. 切到 MyAgent 模式
+        2. 点「区管家」
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果 / 实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志或截图
+      description: 浏览器控制台报错、`dsh web` 终端输出，或界面截图（拖进来即可）
+    validations:
+      required: false

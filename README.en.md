@@ -1,5 +1,9 @@
 # DSH-MYAGENT (`dsh-myagent`)
 
+[![CI](https://github.com/qydhlhz/dsh-myagent/actions/workflows/ci.yml/badge.svg)](https://github.com/qydhlhz/dsh-myagent/actions/workflows/ci.yml)
+![dsh](https://img.shields.io/badge/dsh-0.1.5--rc-blue)
+![license](https://img.shields.io/badge/license-MIT-green)
+
 [简体中文](README.md) | **English**
 
 > **MYAGENT.UI** — a better workspace and file-tree system for dsh.
@@ -116,11 +120,17 @@ The plugin entry can be overridden (replaced wholesale) in the profile's `cordis
 ## Build and test from source
 
 ```sh
-npm install
+npm ci            # install strictly from the lockfile
 npm run check     # tsc --noEmit + node --test (all unit cases)
 npm run build     # tsdown (host half lib/index.js) + esbuild (browser half lib/client.js)
 npm run smoke     # bundle contract + patch composition smoke test
 ```
+
+Tests run out of the box on Node ≥ 24 (they run TypeScript directly via Node's built-in type
+stripping; on Node 22.x add `--experimental-strip-types` yourself). CI
+(`.github/workflows/ci.yml`) runs type-check, tests and build, and uses
+`git diff --exit-code -- lib` to catch "source changed but the committed artifacts were not
+rebuilt". See [`CONTRIBUTING.md`](CONTRIBUTING.md) if you want to send a patch.
 
 The `lib/` build artifacts are committed, so installing needs no build step. **Zero third-party
 runtime dependencies on the consumer side**: the host half has no external dependencies; the browser

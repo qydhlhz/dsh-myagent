@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    name: 类型检查 / 单测 / 构建一致性
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: 安装依赖（严格按 lockfile）
+        run: npm ci
+
+      - name: 类型检查 + 单测
+        run: npm run check
+
+      - name: 构建
+        run: npm run build
+
+      # 本仓库把构建产物 lib/ 一并提交（dsh 从 Git 安装时没有构建步骤），
+      # 所以这里必须挡住"改了源码但忘了重建产物"。
+      - name: 校验提交的 lib/ 与源码一致
+        run: git diff --exit-code -- lib
