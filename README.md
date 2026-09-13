@@ -22,6 +22,14 @@ agent：读取各对话记忆，替你维护工作区分组，标题，简介。
 dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.1.5    # 装完重启 dsh web
 ```
 
+## 界面
+
+![MYAGENT 模式：工作区 → 分组 → 会话三级列表 + 区文件树；右侧栏仍是官方预览](docs/images/myagent-mode.png)
+
+| 区管家（不显示对话框的 agent） | 重命名会话：重新总结命名 / 重新总结简介 |
+|---|---|
+| <img src="docs/images/organizer-panel.png" width="250" alt="区管家面板：这是什么 / 命令 / 消耗用量"> | <img src="docs/images/rename-dialog.png" width="640" alt="重命名会话对话框"> |
+
 ## 功能
 
 - 区文件树浏览（目录展开/折叠、按文件类型着色的图标、拖拽排序会话）

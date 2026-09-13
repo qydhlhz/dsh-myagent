@@ -26,6 +26,14 @@ dependencies; `lib/` is committed — install and go:
 dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.1.5    # restart dsh web afterwards
 ```
 
+## Screenshots
+
+![MYAGENT mode: the three-level workspace → group → session list plus the workspace file tree; the right pane is still the official preview](docs/images/myagent-mode.png)
+
+| Butler (an agent with no chat window of its own) | Renaming a session: re-summarize title / brief |
+|---|---|
+| <img src="docs/images/organizer-panel.png" width="250" alt="Butler panel: what this is / the two commands / usage"> | <img src="docs/images/rename-dialog.png" width="640" alt="Rename session dialog"> |
+
 ## Features
 
 - Workspace file tree (expand/collapse directories, icons coloured by file type, drag to reorder sessions)
