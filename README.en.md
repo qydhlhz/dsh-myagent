@@ -9,7 +9,7 @@ Since dsh 0.1.5 the official build ships its own file tree and preview. This pro
 official preview** and takes over the left sidebar: it merges the three-level list
 (**workspace → group → session**) and the workspace file tree into one left-side panel, plus a
 **one-key toggle between MYAGENT mode and the standard mode** to restore the official UI at any time.
-It also ships **Butler**（区管家）, an agent with no chat window of its own: it reads your
+It also ships **Butler**, an agent with no chat window of its own: it reads your
 conversations and maintains your workspace groups, titles and briefs for you.
 
 Version numbers track dsh (this release **v0.1.5** ↔ dsh `0.1.5-rc`); older plugin builds are
