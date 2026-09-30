@@ -138,9 +138,14 @@ dsh plugin --profile web add ./dsh-myagent
 验证：
 
 ```sh
+# Web：
 dsh --profile web --dump-config          # 应出现 # == dsh-myagent 与插件行
-# 桌面端：
-"D:\DSH\resources\runtime\cli\bin\dsh.cmd" --profile desktop --dump-config
+
+# 桌面端：desktop profile 由应用独占，CLI 不能 --dump-config（会报
+# "profile \"desktop\" is managed exclusively by the Electron application"）；
+# 改用安装器子命令查已装版本：
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop list
+#   → dsh-myagent@0.2.1
 ```
 
 重启后在 GUI（侧栏**插件**页 / 设置 → 插件列表）可见 `dsh-myagent`，侧栏出现工作区 / 区文件树面板。

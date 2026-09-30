@@ -149,9 +149,14 @@ reopen the desktop app** for the bundle layer to take effect (bundles are not ho
 Verify:
 
 ```sh
+# Web:
 dsh --profile web --dump-config   # should contain "# == dsh-myagent" and the plugin entry
-# Desktop app:
-"D:\DSH\resources\runtime\cli\bin\dsh.cmd" --profile desktop --dump-config
+
+# Desktop app: the `desktop` profile is owned exclusively by the app, so the CLI refuses
+# --dump-config ("profile \"desktop\" is managed exclusively by the Electron application").
+# Use the installer subcommand to check the installed version instead:
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop list
+#   → dsh-myagent@0.2.1
 ```
 
 After the restart you will see `dsh-myagent` under Settings → Plugins, and the sidebar shows the
