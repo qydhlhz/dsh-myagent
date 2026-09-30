@@ -119,6 +119,16 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0    # restart dsh 
 > in "never write a hash prefix back". Separately, on the Windows desktop the official build has
 > `[data-windows-titlebar] …_collapsed …_footArea{display:none}` (the collapsed column is 0px
 > wide) and this plugin **deliberately does not reclaim** `display` — do not add `!important` there.
+>
+> ⚠️ **The desktop's official account plugin occupies `settings.launcher`, so the plugin's compact
+> footer layout must step aside entirely.** Once `dsh-client-ui-settings-account` (desktop only)
+> takes `settings.launcher`, the official code stops rendering `settings.trigger` and the seat
+> becomes a **full-width** "avatar + user name" row. Squashing that row into a 32x32 absolutely
+> positioned box makes it overlap the MA mode key (fixed in v0.2.1). Every seat-shrinking rule is
+> therefore gated behind `:has([data-fm-settings-trigger])` — a marker rendered by this plugin's
+> own `IconOnlySettingsTrigger`; when someone else owns the seat the marker is absent, the whole
+> compact group stops applying, and the official two-row layout takes over. The discriminator is
+> our **own attribute**, never a guess at an official hash.
 
 ## Install
 

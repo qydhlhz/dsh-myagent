@@ -22,15 +22,20 @@
 // 所以这里**不再写死任何一个哈希前缀**，一律用 `[class*="<key>"]` 子串匹配 —— 两套哈希
 // 都命中，下次官方换构建机也不用改。
 //
-// ── 0.2 官方新增、与本段 CSS 有交互的两条规则（务必别"修"坏） ──────────────
+// ── 0.2 官方新增、与本段 CSS 有交互的三条规则（务必别"修"坏） ──────────────
 // 1) `[data-windows-titlebar] .<hash>_collapsed .<hash>_footArea{display:none}`
 //    特异性 (0,3,0)，**高于**本文件 `.collapsed .footArea{display:flex}` 的 (0,2,0)。
 //    这是有意的：Windows 桌面端收起侧栏时整条栏宽为 0（不是 56px 轨道），脚部自然应当
 //    隐藏。**不要**给本文件的收起态规则加 !important 去抢回 display —— 那会在 Windows
 //    桌面端把脚部强行画到 0 宽度的栏里。web（56px 轨道）下没有该属性，收起态规则照常生效。
 // 2) 官方 0.2 的 settingsArea **没有** position/z-index（不创建层叠上下文），所以旧版
-//    给 overlay 打 `z-index:1200 !important` 的补丁不再必要 —— 本文件改为在 settingsArea
-//    上显式 `z-index:auto`，从根上保证设置弹窗（portal 到 body 的 fixed 层）不会被困住。
+//    给 overlay 打 `z-index:1200 !important` 的补丁不再必要 —— settingsArea 上显式
+//    `z-index:auto`，从根上保证设置弹窗（portal 到 body 的 fixed 层）不会被困住。
+// 3) **settings.launcher 会整体顶掉 settings.trigger**（桌面端官方账号插件就这么干，且仅在
+//    `"dshDesktop" in globalThis` 时注册）。席位一旦被别人的 launcher 占用，本插件的
+//    32×32 紧凑布局必须整体让位，否则会把「头像 + 用户名」整行压扁并与模式键重合 ——
+//    所以下面所有紧凑规则都挂在 `:has([data-fm-settings-trigger])` 这个**本插件自有标记**
+//    之下（见 IconOnlySettingsTrigger.tsx），不做任何官方哈希的猜测。
 //
 // 类名 key（footArea / footerActions / settingsArea）在官方产物里只以哈希形式出现在
 // className 上，没有任何 data-* 锚点，故只能用子串选择器；这三/四个 key 足够独特
@@ -46,22 +51,45 @@
 
 const CSS = `
 [class*="footArea"]{position:relative;padding:8px 0 3px;border-top:1px solid var(--dsw-alias-border-l1)}
-[class*="settingsArea"]{position:absolute;top:8px;left:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;z-index:auto}
+
+/* ── 以下紧凑同行布局**只在**"设置席位里坐的是本插件那颗单图标 trigger"时生效 ────────
+   判据是本插件自己渲染的稳定标记 data-fm-settings-trigger（见 IconOnlySettingsTrigger），
+   **不是**任何官方哈希。
+
+   为什么必须加这个门（用户 2026-09 报的"设置 / MA / 用户图标重合"）：
+   桌面端的官方账号插件（dsh-client-ui-settings-account，仅在 globalThis 上有 dshDesktop
+   这个键时才注册）会占用 **settings.launcher**；而 settings.launcher 一旦有占位者，官方
+   就不再渲染 settings.trigger（ui-settings-general 的 renderSlot fallback），席位里换成
+   「24px 头像 + 用户名」的**整行**控件（AccountMenu：root{flex:1} + trigger{width:100%;
+   height:44px;padding:6px;gap:8px}）。
+   若仍按 32×32 绝对定位压扁这一行，头像会被裁切，44px 的行又与 8px 偏移处的 32px
+   MA 键在视觉上叠在一起 —— 就是"重合"。加门之后，席位被别人的 launcher 占用时本插件
+   **完全不碰**底栏内部布局，官方上下两行布局原样生效。
+   浏览器不支持 :has() 时整段不生效 → 同样退回官方布局，属于安全的降级方向。 */
+[class*="footArea"]:has([data-fm-settings-trigger]) [class*="settingsArea"]{position:absolute;top:8px;left:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;z-index:auto}
 /* z-index:auto 是刻意的：官方设置弹窗是 portal 到 body 的 fixed 层，只要这条祖先链上
    没有层叠上下文，它就不会被侧栏的 z-index:1 困住（旧版靠给 overlay 打 1200 补丁，
    0.2 官方 settingsArea 本身不创建层叠上下文，故此处从根上解决）。 */
 /* triggerRow 官方给的是 width:calc(100% + 4px); margin:4px -2px（比 32px 的 settingsArea
    宽出 4px），会把里面的按钮撑到 36px。这里把它收回成恰好铺满 settingsArea。 */
-[class*="settingsArea"] [class*="triggerRow"]{width:100%;margin:0;gap:0;justify-content:center}
-[class*="settingsArea"] [class*="trigger"]:not([class*="triggerRow"]){box-sizing:border-box;flex:none;width:32px;height:32px;min-width:0;margin:0;padding:0;border-radius:6px;justify-content:center;gap:0;display:flex;align-items:center;background:transparent}
-[class*="settingsArea"] [class*="trigger"]:not([class*="triggerRow"]):hover{background:var(--dsw-alias-bg-layer-1)}
-[class*="footerActions"]{padding-left:36px;align-items:center}
-[class*="collapsed"] [class*="footArea"]{padding:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:0}
-[class*="collapsed"] [class*="settingsArea"]{position:static;order:2;width:auto;height:auto;min-height:0;margin:0;padding:0;display:flex;justify-content:center}
-[class*="collapsed"] [class*="settingsArea"] [class*="triggerRow"]{width:36px;margin:8px 0 10px}
-[class*="collapsed"] [class*="settingsArea"] [class*="trigger"]:not([class*="triggerRow"]){width:36px;height:36px;margin:0;padding:0;border-radius:50%;justify-content:center}
-[class*="collapsed"] [class*="footerActions"]{order:-1;padding-left:0;width:auto;margin:0;display:flex;justify-content:center}
-[class*="collapsed"] [class*="footerActions"] .fm-mk-btn{width:36px;height:36px;margin:10px 0 0}
+[class*="footArea"]:has([data-fm-settings-trigger]) [class*="settingsArea"] [class*="triggerRow"]{width:100%;margin:0;gap:0;justify-content:center}
+[class*="footArea"]:has([data-fm-settings-trigger]) [class*="settingsArea"] [class*="trigger"]:not([class*="triggerRow"]){box-sizing:border-box;flex:none;width:32px;height:32px;min-width:0;margin:0;padding:0;border-radius:6px;justify-content:center;gap:0;display:flex;align-items:center;background:transparent}
+[class*="footArea"]:has([data-fm-settings-trigger]) [class*="settingsArea"] [class*="trigger"]:not([class*="triggerRow"]):hover{background:var(--dsw-alias-bg-layer-1)}
+[class*="footArea"]:has([data-fm-settings-trigger]) [class*="footerActions"]{padding-left:36px;align-items:center}
+
+/* 收起态（web 的 56px 轨道）：MA 键在上、设置键在下，竖直居中。同样只在标记在场时生效。
+   ⚠️ 前面挂 html:not([data-windows-titlebar]) 是**必须**的：Windows 桌面端收起时整栏 0 宽，
+   官方有一条 [data-windows-titlebar] + 折叠类 + footArea 的 display:none。加了 :has() 之后
+   本组选择器的特异性升到 (0,3,0)，与官方那条**打平**，而本文件在官方样式表之后注入 →
+   会反过来把官方隐藏的脚部强行显示在 0 宽栏里（实测复现过）。这里显式声明"该属性在场时
+   整组不适用"，不去赌特异性。
+   注意本段 CSS 是模板字符串：注释里**不能出现反引号**（会提前结束模板），测试亦已锁定。 */
+html:not([data-windows-titlebar]) [class*="collapsed"] [class*="footArea"]:has([data-fm-settings-trigger]){padding:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:0}
+html:not([data-windows-titlebar]) [class*="collapsed"] [class*="footArea"]:has([data-fm-settings-trigger]) [class*="settingsArea"]{position:static;order:2;width:auto;height:auto;min-height:0;margin:0;padding:0;display:flex;justify-content:center}
+html:not([data-windows-titlebar]) [class*="collapsed"] [class*="footArea"]:has([data-fm-settings-trigger]) [class*="settingsArea"] [class*="triggerRow"]{width:36px;margin:8px 0 10px}
+html:not([data-windows-titlebar]) [class*="collapsed"] [class*="footArea"]:has([data-fm-settings-trigger]) [class*="settingsArea"] [class*="trigger"]:not([class*="triggerRow"]){width:36px;height:36px;margin:0;padding:0;border-radius:50%;justify-content:center}
+html:not([data-windows-titlebar]) [class*="collapsed"] [class*="footArea"]:has([data-fm-settings-trigger]) [class*="footerActions"]{order:-1;padding-left:0;width:auto;margin:0;display:flex;justify-content:center}
+html:not([data-windows-titlebar]) [class*="collapsed"] [class*="footArea"]:has([data-fm-settings-trigger]) [class*="footerActions"] .fm-mk-btn{width:36px;height:36px;margin:10px 0 0}
 `;
 
 export function ensureSettingsCompactCss() {

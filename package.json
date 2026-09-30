@@ -1,8 +1,8 @@
 {
   "name": "dsh-myagent",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": "qydhlhz",
-  "description": "DSH-MYAGENT (MYAGENT.UI) — an agent-native workspace, session and file-tree sidebar for the dsh Web GUI, plus a headless organizer agent that maintains session briefs, titles and groups",
+  "description": "DSH-MYAGENT (MYAGENT.UI) 鈥?an agent-native workspace, session and file-tree sidebar for the dsh Web GUI, plus a headless organizer agent that maintains session briefs, titles and groups",
   "keywords": [
     "dsh",
     "deepseek-harness",
