@@ -21,6 +21,7 @@ const CSS = CSS_WITH_COMMENTS.replace(/\/\*[\s\S]*?\*\//g, "");
 const RULES = CSS.split("}").map((r) => r.trim()).filter((r) => r.includes("{"));
 
 const GATE = ":has([data-fm-settings-trigger])";
+const NEGATIVE_GATE = ":not(:has([data-fm-settings-trigger]))";
 const TRIGGER_SRC = readFileSync(join(projectRoot, "src", "client", "IconOnlySettingsTrigger.tsx"), "utf8");
 
 test("CSS 里不得出现反引号（它是模板字符串，会提前结束字面量）", () => {
@@ -59,23 +60,43 @@ test("子串选择器不会互相误伤：footerActions 不含 footArea", () => 
   assert.equal("footerActions".includes("footArea"), false);
 });
 
-test("所有收缩设置席位的规则都必须挂在 :has([data-fm-settings-trigger]) 门下", () => {
+test("凡是要动设置席位的规则都必须带门，且门的方向要和布局模式一致", () => {
   // 桌面端官方账号插件会占用 settings.launcher，官方随即不再渲染 settings.trigger，
   // 席位里换成「头像 + 用户名」的整行控件。若照旧把它压成 32×32 绝对定位盒子，
   // 头像被裁切且整行与模式键叠在一起 —— 用户报的"设置 / MA / 用户图标重合"。
   // 因此凡是要动 settingsArea / triggerRow / trigger / footerActions 几何的规则，
-  // 一律必须带这个门（判据是本插件自有标记，不猜官方哈希）。
-  const seatShrinking = RULES.filter(
+  // 一律必须带门（判据是本插件自有标记，不猜官方哈希），且**只能**是两种方向之一：
+  //   · 肯定门 :has(...)        → 席位里是插件自己的单图标 trigger（web）→ 紧凑同行
+  //   · 否定门 :not(:has(...))  → 席位被官方账号 launcher 占用（桌面端）→ 并成一行右对齐
+  // 关键点：否定门里也含有 ":has([data-fm-settings-trigger])" 这个**子串**，所以只查
+  // includes(GATE) 会被它蒙混过关 —— 必须显式区分两种方向。
+  const seatRules = RULES.filter(
     (r) => /\[class\*="(settingsArea|triggerRow|footerActions)"\]/.test(r) ||
            /\[class\*="trigger"\]:not/.test(r),
   );
-  assert.ok(seatShrinking.length >= 5, `应有多条收缩规则，实际 ${seatShrinking.length}`);
-  for (const rule of seatShrinking) {
-    assert.ok(rule.includes(GATE), `收缩规则缺少 ${GATE} 门：${rule.slice(0, 90)}`);
+  assert.ok(seatRules.length >= 8, `应有多条席位规则，实际 ${seatRules.length}`);
+  for (const rule of seatRules) {
+    const positive = rule.includes(GATE) && !rule.includes(NEGATIVE_GATE);
+    const negative = rule.includes(NEGATIVE_GATE);
+    assert.ok(positive || negative, `席位规则缺少门（肯定或否定）：${rule.slice(0, 90)}`);
+    assert.ok(!(positive && negative), `席位规则的门方向矛盾：${rule.slice(0, 90)}`);
   }
 });
 
-test("标记确实由 IconOnlySettingsTrigger 渲染（否则门永远为假、紧凑布局整体失效）", () => {
+test("账号 launcher 在场时：底栏并成一行、整体右对齐（用户 2026-09 定案）", () => {
+  const footRow = RULES.find((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="footArea"]'));
+  assert.ok(footRow, "应有否定门下的 footArea 规则");
+  assert.ok(footRow.includes("flex-direction:row"), "此时 footArea 应为行方向（两个席位并成一行）");
+  assert.ok(footRow.includes("justify-content:flex-end"), "整组应右对齐");
+  // 官方给两个席位的是 width:100%，在行方向会撑爆，必须收回。
+  const areaRule = RULES.find((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="settingsArea"]{'));
+  assert.ok(areaRule && areaRule.includes("width:auto"), "否定门下 settingsArea 应收回 width:auto");
+  const actionsRule = RULES.find((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="footerActions"]{'));
+  assert.ok(actionsRule && actionsRule.includes("width:auto"), "否定门下 footerActions 应收回 width:auto");
+  assert.ok(actionsRule.includes("padding-left:0"), "否定门下不应再给模式键留 36px 让位");
+});
+
+test("标记确实由 IconOnlySettingsTrigger 渲染（否则两个门的方向都会判错）", () => {
   assert.ok(TRIGGER_SRC.includes('"data-fm-settings-trigger"'), "trigger 组件应渲染 data-fm-settings-trigger");
 });
 

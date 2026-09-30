@@ -112,13 +112,20 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0    # 装完重启
 > `[data-windows-titlebar] …_collapsed …_footArea{display:none}`（收起时整栏 0 宽），
 > 插件**有意不抢回** `display` —— 别给那条规则加 `!important`。
 >
-> ⚠️ **桌面端官方账号插件会占用 `settings.launcher`，插件的底栏紧凑布局必须整体让位。**
+> ⚠️ **桌面端官方账号插件会占用 `settings.launcher`，此时底栏走另一套布局。**
 > `dsh-client-ui-settings-account`（仅在桌面端注册）占用 `settings.launcher` 后，官方就
 > 不再渲染 `settings.trigger`，席位里换成「头像 + 用户名」的**整行**控件。若仍按 32×32
-> 绝对定位压扁这一行，就会和 MA 模式键**重合**（v0.2.1 修的问题）。因此所有收缩席位的
-> 规则都挂在 `:has([data-fm-settings-trigger])` 之下 —— 那个标记由本插件的
-> `IconOnlySettingsTrigger` 渲染，席位被别人占用时它自然不在场，紧凑布局整组失效、
-> 官方上下两行布局原样生效。判据是**本插件自有属性**，不猜任何官方哈希。
+> 绝对定位压扁这一行，就会和 MA 模式键**重合**（v0.2.1 修的问题）。
+> 因此所有席位规则都按**本插件自有标记** `data-fm-settings-trigger`（由
+> `IconOnlySettingsTrigger` 渲染）分成相反的两组：
+>
+> | 席位里是谁 | 选择器 | 底栏布局 |
+> |---|---|---|
+> | 本插件的单图标 trigger（Web / 无账号插件） | `[class*="footArea"]:has([data-fm-settings-trigger])` | 设置键 32×32 靠左，MA 同一行靠右 |
+> | 官方账号 launcher（桌面端） | `[class*="footArea"]:not(:has([data-fm-settings-trigger]))` | 并成**一行**、整体**右对齐**：`[MA] [头像 用户名]` |
+>
+> 判据是**本插件自有属性**，不猜任何官方哈希；`settings.launcher` 里换成任何别的占位者
+> 也会自动落到第二套（右对齐单行）。浏览器不支持 `:has()` 时两组都不生效 → 退回官方布局。
 
 ## 安装
 

@@ -120,15 +120,22 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0    # restart dsh 
 > `[data-windows-titlebar] …_collapsed …_footArea{display:none}` (the collapsed column is 0px
 > wide) and this plugin **deliberately does not reclaim** `display` — do not add `!important` there.
 >
-> ⚠️ **The desktop's official account plugin occupies `settings.launcher`, so the plugin's compact
-> footer layout must step aside entirely.** Once `dsh-client-ui-settings-account` (desktop only)
-> takes `settings.launcher`, the official code stops rendering `settings.trigger` and the seat
-> becomes a **full-width** "avatar + user name" row. Squashing that row into a 32x32 absolutely
-> positioned box makes it overlap the MA mode key (fixed in v0.2.1). Every seat-shrinking rule is
-> therefore gated behind `:has([data-fm-settings-trigger])` — a marker rendered by this plugin's
-> own `IconOnlySettingsTrigger`; when someone else owns the seat the marker is absent, the whole
-> compact group stops applying, and the official two-row layout takes over. The discriminator is
-> our **own attribute**, never a guess at an official hash.
+> ⚠️ **The desktop's official account plugin occupies `settings.launcher`, which switches the
+> footer to a different layout.** Once `dsh-client-ui-settings-account` (desktop only) takes
+> `settings.launcher`, the official code stops rendering `settings.trigger` and the seat becomes a
+> **full-width** "avatar + user name" row. Squashing that row into a 32x32 absolutely positioned
+> box makes it overlap the MA mode key (fixed in v0.2.1). Every seat rule is therefore split into
+> two opposite groups by this plugin's **own marker** `data-fm-settings-trigger` (rendered by
+> `IconOnlySettingsTrigger`):
+>
+> | Who owns the seat | Selector | Footer layout |
+> |---|---|---|
+> | this plugin's single-icon trigger (Web / no account plugin) | `[class*="footArea"]:has([data-fm-settings-trigger])` | 32x32 settings key on the left, MA on the same row at the right |
+> | the official account launcher (desktop) | `[class*="footArea"]:not(:has([data-fm-settings-trigger]))` | merged into **one row**, **right-aligned**: `[MA] [avatar name]` |
+>
+> The discriminator is our **own attribute**, never a guess at an official hash; any other
+> occupant of `settings.launcher` also falls into the second (single right-aligned row) layout.
+> Without `:has()` support neither group applies, falling back to the official layout.
 
 ## Install
 
