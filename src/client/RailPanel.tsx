@@ -17,26 +17,22 @@
 //     每个任务一颗状态点，悬停出「标题 · 状态」，点击打开该会话；
 //   - 全部按钮统一 32×32 正圆、字形 15px（官方 .tool / .iconButton 的字形档），不再溢出。
 import React, { useMemo } from "react";
-import { IconFolderOpen16 } from "@deepseek-ai/dsh-client-ui-primitives";
-import type { PendingInteractionStatus, SelectorHook, SessionsSnapshot, WorkspacesSnapshot } from "./tree-utils.ts";
+import { IconFolderOpenMedium } from "@deepseek-ai/dsh-client-ui-primitives";
+import type {
+  SelectorHook,
+  SessionDotKind,
+  SessionStatus,
+  SessionStatusHook,
+  SessionsSnapshot,
+  WorkspacesSnapshot,
+} from "./tree-utils.ts";
+import { mainSessionId, sessionDotKind, SESSION_DOT_LABEL } from "./tree-utils.ts";
 import { FileBadge } from "./FileBadge.tsx";
-import { RAIL_BUTTON_SIZE, RAIL_DOT_SIZE, RAIL_MAX_TASKS } from "./ui-kit.ts";
+import { dotPresentation, RAIL_BUTTON_SIZE, RAIL_DOT_SIZE, RAIL_MAX_TASKS, STATUS_DOT_CSS } from "./ui-kit.ts";
 
-/** 任务状态（正在进行的四种）。 */
-type ActiveKind = "running" | PendingInteractionStatus;
-
-const STATUS_LABEL: Record<ActiveKind, string> = {
-  running: "正在运行",
-  approval: "等待批准",
-  "plan-review": "等待计划确认",
-  question: "等待回答",
-};
-
-/** 状态点颜色：与宽态会话行的状态点语义完全一致（问答用亮黄——主题无纯黄 token）。 */
-function dotColor(kind: ActiveKind): string {
-  if (kind === "running") return "var(--dsw-alias-state-business-primary)";
-  if (kind === "question") return "#FACC15";
-  return "var(--dsw-alias-state-warn-primary)";
+/** rail 只列"正在进行"的四种状态：运行中 + 三种等待用户（空闲/已完成/空白/当前都不算）。 */
+function isActiveKind(kind: SessionDotKind): boolean {
+  return kind === "running" || kind === "approval" || kind === "plan-review" || kind === "question";
 }
 
 const RAIL_CSS = `
@@ -51,18 +47,21 @@ const RAIL_CSS = `
 .fm-rail-btn:focus-visible{outline:1px solid var(--dsw-alias-state-business-primary);outline-offset:-1px}
 /* 字形统一 15px：官方 .tool / .iconButton 就是 28px 方框配 15px 字形（CSS 定尺寸）。 */
 .fm-rail-btn svg{width:15px;height:15px}
-.fm-rail-btn .fm-rail-dot{width:${RAIL_DOT_SIZE}px;height:${RAIL_DOT_SIZE}px}
 .fm-rail-sep{width:20px;height:1px;background:var(--dsw-alias-border-l3);margin:1px 0;flex:none}
-.fm-rail-dot{display:block;border-radius:50%;box-sizing:border-box}
-/* 运行中的呼吸脉冲，与宽态状态点同款暗示。 */
-@keyframes fm-rail-pulse{0%,100%{opacity:1}50%{opacity:.35}}
-.fm-rail-dot-running{animation:fm-rail-pulse 1.2s ease-in-out infinite}
 .fm-rail-more{font-size:10px;line-height:12px;color:var(--dsw-alias-label-tertiary);flex:none}
 `;
+// 任务点（.fm-dot / .fm-dot-pulse / .fm-dot-attention）来自 ui-kit 的 STATUS_DOT_CSS：
+// 与宽态会话行共用同一套配色与动效（运行 = 蓝·呼吸，等待用户 = 琥珀/亮黄·双闪 + 光环）。
 
 export interface RailPanelProps {
   useSessions: SelectorHook<SessionsSnapshot>;
   useWorkspaces: SelectorHook<WorkspacesSnapshot>;
+  /**
+   * 槽位全局标准套件给的统一 UI 状态选择器（dsh-client-ui-session 的 useSessionStatus）。
+   * 等待批准 / 计划确认 / 回答 / 已完成待读都只看这里——会话摘要（useSessions）没有这些位，
+   * 只读摘要会把"在等你"显示成"在跑"。可选：缺席时降级为只读摘要的 running。
+   */
+  useSessionStatus?: SessionStatusHook;
   /** 宿主槽位套件给的回调：把侧栏从收起切回展开。 */
   expandSidebar?: () => void;
   /** 点击「工作区」区标：展开后定位到该工作区（展开其会话列表并滚动到可见）。 */
@@ -78,33 +77,41 @@ export interface RailPanelProps {
 export function RailPanel(props: RailPanelProps) {
   const sessions = props.useSessions((s) => s);
   const workspaces = props.useWorkspaces((s) => s);
+  const statuses = props.useSessionStatus?.((s) => s);
+
+  // 当前主对话（0.2：按 mainView 引用来源推导，官方 ui-workspace 同款口径）。
+  const current = mainSessionId(sessions);
 
   // 当前主对话所在的工作区（用于「工作区」区标的定位目标）。
   const currentWorkspaceId = useMemo(() => {
-    const cur = sessions.current;
-    if (cur === undefined) return undefined;
-    return workspaces.items.find((w) => (w.sessionIds ?? []).includes(cur))?.workspaceId;
-  }, [sessions.current, workspaces.items]);
+    if (current === undefined) return undefined;
+    return workspaces.items.find((w) => (w.sessionIds ?? []).includes(current))?.workspaceId;
+  }, [current, workspaces.items]);
 
   // 正在进行的任务：running ∪ 等待批准/计划确认/问答。空闲与已完成不算。
   // 按 workspace 顺序、workspace 内 sessionIds 顺序列出（与宽态列表顺序一致），并去重。
+  // 状态判定与宽态会话行**同源**（tree-utils.sessionDotKind）：待交互优先于 running。
   const active = useMemo(() => {
     const archived = new Set(workspaces.archivedSessionIds ?? []);
     const seen = new Set<string>();
-    const out: Array<{ id: string; title: string; label: string; kind: ActiveKind }> = [];
+    const out: Array<{ id: string; title: string; label: string; kind: SessionDotKind }> = [];
     for (const w of workspaces.items) {
       for (const id of w.sessionIds ?? []) {
         if (seen.has(id) || archived.has(id)) continue;
         seen.add(id);
         const s = sessions.byId[id];
-        if (s === undefined) continue;
-        const kind: ActiveKind | undefined = s.pendingInteraction ?? (s.running ? "running" : undefined);
-        if (kind === undefined) continue;
-        out.push({ id, title: s.title ?? "未命名会话", label: STATUS_LABEL[kind], kind });
+        const kind = sessionDotKind({
+          id,
+          summary: s,
+          status: statuses?.get(id) as SessionStatus | undefined,
+          current,
+        });
+        if (kind === undefined || !isActiveKind(kind)) continue;
+        out.push({ id, title: s?.title ?? "未命名会话", label: SESSION_DOT_LABEL[kind], kind });
       }
     }
     return out;
-  }, [sessions.byId, workspaces.items, workspaces.archivedSessionIds]);
+  }, [sessions.byId, current, workspaces.items, workspaces.archivedSessionIds, statuses]);
 
   const shown = active.slice(0, RAIL_MAX_TASKS);
   const hidden = active.length - shown.length;
@@ -112,6 +119,7 @@ export function RailPanel(props: RailPanelProps) {
   return (
     <div className="fm-rail">
       <style>{RAIL_CSS}</style>
+      <style>{STATUS_DOT_CSS}</style>
 
       {/* 工作区区标：展开 + 定位到当前主对话所在的工作区。 */}
       <button
@@ -125,7 +133,7 @@ export function RailPanel(props: RailPanelProps) {
           props.expandSidebar?.();
         }}
       >
-        <IconFolderOpen16 size={15} />
+        <IconFolderOpenMedium size={15} />
       </button>
 
       {/* 文件树区标：展开 + 文件树切回当前主对话对应的根。无工作区时不渲染。 */}
@@ -145,25 +153,27 @@ export function RailPanel(props: RailPanelProps) {
         </button>
       ) : null}
 
-      {/* 正在进行的任务：一颗状态点一个任务，悬停出「标题 · 状态」。 */}
+      {/* 正在进行的任务：一颗状态点一个任务，悬停出「标题 · 状态」。
+          点的配色/动效与宽态会话行同源（dotPresentation）：运行 = 蓝·呼吸，
+          等待用户 = 琥珀/亮黄·双闪 + 光环 —— 收起侧栏时也能一眼看出哪个在等自己。 */}
       {shown.length > 0 ? <div className="fm-rail-sep" /> : null}
-      {shown.map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          className="fm-rail-btn"
-          data-myagent-rail="task"
-          data-session-id={t.id}
-          title={`${t.title} · ${t.label}`}
-          aria-label={`${t.title} · ${t.label}`}
-          onClick={() => props.open?.(t.id)}
-        >
-          <span
-            className={`fm-rail-dot${t.kind === "running" ? " fm-rail-dot-running" : ""}`}
-            style={{ background: dotColor(t.kind) }}
-          />
-        </button>
-      ))}
+      {shown.map((t) => {
+        const { style, className } = dotPresentation(t.kind, RAIL_DOT_SIZE);
+        return (
+          <button
+            key={t.id}
+            type="button"
+            className="fm-rail-btn"
+            data-myagent-rail="task"
+            data-session-id={t.id}
+            title={`${t.title} · ${t.label}`}
+            aria-label={`${t.title} · ${t.label}`}
+            onClick={() => props.open?.(t.id)}
+          >
+            <span className={className} style={style} />
+          </button>
+        );
+      })}
       {hidden > 0 ? <div className="fm-rail-more">+{hidden}</div> : null}
     </div>
   );

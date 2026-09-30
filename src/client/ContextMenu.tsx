@@ -168,6 +168,7 @@ export function PromptModal({ open, title, description, initialValue, placeholde
       open={open}
       onClose={onClose}
       title={title}
+      closeLabel="关闭"
       description={description}
       className="fm-prompt-modal-wide"
       footer={
@@ -234,6 +235,7 @@ export function ConfirmModal({ open, title, description, confirmLabel = "确认"
       open={open}
       onClose={onClose}
       title={title}
+      closeLabel="关闭"
       description={description}
       footer={
         <>

@@ -15,30 +15,30 @@
 //      行 → 下一行 id 为 undefined）。拖拽中目标行显示插入线（before/after，business-primary），
 //      文档级 dragover/drop 拦截防拖出列表时浏览器导航（useNativeDragAcceptance 同款）。
 //   3) 图标对齐：统一行结构——固定宽度图标列（16px 槽）+ 名称 + 行内操作按钮组（hover 显示）。
-//      工作区行：Folder 图标（展开 IconFolderOpen16 / 收起 IconFolderClose16），hover 时切换
-//      为三角箭头（IconTriangleRightFill14，展开态 rotate 90°，与原生 .arrow/.arrowOpen 一致）；
+//      工作区行：Folder 图标（展开 IconFolderOpenMedium / 收起 IconFolderCloseMedium），hover 时切换
+//      为三角箭头（IconTriangleRightFillMedium，展开态 rotate 90°，与原生 .arrow/.arrowOpen 一致）；
 //      会话行：状态小圆点（当前会话实心 business 点）。
 // UI polish 轮：rename/delete/archive 用 primitives Modal + Input；行按钮用 primitives Button；
 // 色值全部走 --dsw-* token。
 import React, { useRef, useState } from "react";
 import {
   Button,
-  IconArchiveOutline20,
-  IconChevronDownOutline14,
-  IconEditOutline16,
-  IconFolderClose16,
-  IconFolderOpen16,
-  IconListPenOutline16,
-  IconNewChatOutline16,
-  IconPanelLeftOutline16,
-  IconPlusOutline16,
-  IconProjectAddOutline16,
-  IconTrashOutline16,
-  IconTriangleRightFill14,
+  IconArchiveOutlineMedium,
+  IconChevronDownOutlineMedium,
+  IconEditOutlineMedium,
+  IconFolderCloseMedium,
+  IconFolderOpenMedium,
+  IconListPenOutlineMedium,
+  IconNewChatOutlineMedium,
+  IconPanelLeftOutlineMedium,
+  IconPlusOutlineMedium,
+  IconProjectAddOutlineMedium,
+  IconTrashOutlineMedium,
+  IconTriangleRightFillMedium,
   Modal,
 } from "@deepseek-ai/dsh-client-ui-primitives";
-import type { SelectorHook, SessionsSnapshot, WorkspacesSnapshot, SessionSummary } from "./tree-utils.ts";
-import { validateNameInput } from "./tree-utils.ts";
+import type { SelectorHook, SessionStatus, SessionStatusHook, SessionStatusSnapshot, SessionsSnapshot, WorkspacesSnapshot } from "./tree-utils.ts";
+import { mainSessionId, sessionDotKind, SESSION_DOT_LABEL, validateNameInput, type SessionDotKind } from "./tree-utils.ts";
 import { setActiveRoot } from "./active-root-store.ts";
 import { ConfirmModal, PromptModal } from "./ContextMenu.tsx";
 import { TopHatIcon } from "./TopHatIcon.tsx";
@@ -83,6 +83,7 @@ import {
 } from "./organizer.ts";
 import { OrganizePanel } from "./OrganizePanel.tsx";
 import {
+  dotPresentation,
   FONT_SECONDARY,
   HEADER_BORDER,
   ICON_BUTTON_STYLE,
@@ -93,6 +94,8 @@ import {
   ROW_ACTION_GAP,
   ROW_ACTION_HIT_INSET,
   ROW_MIN_HEIGHT,
+  STATUS_DOT_CSS,
+  STATUS_DOT_SIZE,
 } from "./ui-kit.ts";
 
 export interface WorkspaceBrowserProps {
@@ -116,6 +119,13 @@ export interface WorkspaceBrowserProps {
   api: Api | null;
   useSessions: SelectorHook<SessionsSnapshot>;
   useWorkspaces: SelectorHook<WorkspacesSnapshot>;
+  /**
+   * 槽位全局标准套件给的统一 UI 状态选择器（dsh-client-ui-session 的 useSessionStatus）：
+   * 会话等待批准 / 计划确认 / 回答，以及"已完成待读"，都在这个快照里。
+   * **必须**从这里读——会话摘要（useSessions）里没有这些位，只读摘要的话等待态永远
+   * 显示成"运行中"的蓝点（用户报的问题）。可选：宿主没给时降级为只读摘要的 running。
+   */
+  useSessionStatus?: SessionStatusHook;
   startSession?: (workspaceId?: string) => void;
   /** 新建工作区（宿主原生目录选择器 + workspace.create）；用户取消时静默。 */
   addWorkspace?: () => void | Promise<void>;
@@ -214,9 +224,9 @@ const BROWSER_CSS = `
 }
 .fm-wb-drop-before::before{top:-1px}
 .fm-wb-drop-after::after{bottom:-1px}
-/* 运行中会话状态点的呼吸脉冲（与官方 StateDot ongoing 的活跃暗示一致）。 */
-@keyframes fm-wb-dot-pulse{0%,100%{opacity:1}50%{opacity:.35}}
-.fm-wb-dot-running{animation:fm-wb-dot-pulse 1.2s ease-in-out infinite}
+/* 会话行状态点的动效/配色**不在这里**：宽态会话行与 rail 任务点共用 ui-kit 的
+   STATUS_DOT_CSS（.fm-dot / .fm-dot-pulse / .fm-dot-attention），避免两处各写一套走样。
+   语义与优先级见 tree-utils.sessionDotKind。 */
 /* 只隐藏宿主原生“新会话”大按钮（保留 DeepSeek logo/brand 按钮）。 */
 button.hHd-Xa_newSession,
 button[class*="newSession"],
@@ -289,7 +299,15 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
   const workspaces = useWorkspaces((s) => s.items) ?? [];
   const archived = useWorkspaces((s) => s.archivedSessionIds) ?? [];
   const sessions = useSessions((s) => s.byId) ?? {};
-  const current = useSessions((s) => s.current);
+  // 当前主视图会话：0.2 起 SessionListState 没有 current，按 mainView
+  // 引用来源推导（官方 ui-workspace 同款口径）。选择器返回字符串（身份稳定，
+  // 默认 Object.is 比较即可），全局面板打开等场景返回 undefined = 无"当前"标识。
+  const current = useSessions((s) => (s === undefined ? undefined : mainSessionId(s)));
+  // 待交互 / 已完成待读（等待批准 / 计划确认 / 回答）走**统一 UI 状态**通道：
+  // 会话摘要里没有这些位，必须读槽位全局标准套件的 useSessionStatus。hook 缺席
+  // （宿主版本旧 / 插件被裁剪）时为空快照 —— sessionDotKind 会退回摘要的 running，
+  // 渲染照旧不抛。选择器返回 Map 本身（快照身份稳定），故这里不做 equality 定制。
+  const statuses: SessionStatusSnapshot = props.useSessionStatus?.((s) => s) ?? new Map();
 
   const [collapsed, setCollapsed] = useState<Set<string>>(() => readCollapsed());
   const [groupsByWorkspace, setGroupsByWorkspace] = useState<Record<string, SessionGroups>>({});
@@ -1518,49 +1536,31 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
 
   // 会话行状态点（对齐官方 ui-workspace 的状态语义，优先级从高到低）：
   //   1) 等待用户确认（pendingInteraction）：
-  //        approval / plan-review → 琥珀实心点；
-  //        question（问答框就绪，如 superpowers/brainstorming 提问）→ 亮黄色实心点；
+  //        approval / plan-review → 琥珀实心点 + 双闪 + 光环；
+  //        question（问答框就绪，如 brainstorming 提问）→ 亮黄色实心点 + 双闪 + 光环；
   //   2) 正在运行（running）→ 蓝色实心点 + 呼吸脉冲动画；
   //   3) 已完成待读（completed，host 完成提醒位）→ 绿色实心点；
   //   4) 初始/空白（blank，provisional 新会话）→ 空心点；
   //   5) 当前会话（无其他状态）→ 蓝色实心点（选中标识，保留原视觉）；
   //   6) 其余（普通跑完/空闲）→ 灰色实心点。
   // 固定 16px 槽位保持图标列对齐；每个点带 title 提示（状态可读）。
-  const statusDot = (id: string, s: SessionSummary | undefined) => {
-    const dot: React.CSSProperties = {
-      width: 8,
-      height: 8,
-      borderRadius: "50%",
-      boxSizing: "border-box",
-      display: "inline-block",
-      flex: "none",
-    };
-    if (s === undefined) return null;
-    if (s.pendingInteraction !== undefined) {
-      const label =
-        s.pendingInteraction === "approval"
-          ? "等待批准"
-          : s.pendingInteraction === "plan-review"
-            ? "等待计划确认"
-            : "等待回答";
-      // 问答框（question）就绪时用醒目的黄色圆点，与批准/计划确认的琥珀色区分
-      // （主题无纯黄 token，用固定亮黄 #FACC15，暗色/亮色主题下均清晰可见）。
-      const color = s.pendingInteraction === "question" ? "#FACC15" : "var(--dsw-alias-state-warn-primary)";
-      return <span style={{ ...dot, background: color }} title={label} />;
-    }
-    if (s.running) {
-      return <span className="fm-wb-dot-running" style={{ ...dot, background: "var(--dsw-alias-state-business-primary)" }} title="正在运行" />;
-    }
-    if (s.completed) {
-      return <span style={{ ...dot, background: "var(--dsw-alias-state-success-primary)" }} title="已完成" />;
-    }
-    if (s.blank) {
-      return <span style={{ ...dot, border: "1px solid var(--dsw-alias-label-tertiary)" }} title="新会话" />;
-    }
-    if (id === current) {
-      return <span style={{ ...dot, background: "var(--dsw-alias-state-business-primary)" }} title="当前会话" />;
-    }
-    return <span style={{ ...dot, background: "var(--dsw-alias-label-tertiary)" }} title="空闲" />;
+  //
+  // ⚠️ 待交互 / 已完成待读**不在**会话摘要里（0.2 的 SessionSummary 没有这些字段），
+  // 必须从槽位全局标准套件给的 `useSessionStatus` 快照按会话 id 取
+  // —— 曾经只读摘要字段，于是等待批准/等待回答时点依旧是"运行中"的蓝色脉冲点
+  // （用户 2026-09 报的问题：停在待批准或问用户意见时与正常执行分不开）。
+  /** 汇总某会话行的状态点语义（待交互 > 运行中 > 已完成 > 空白 > 当前 > 空闲）。 */
+  const dotKindOf = (id: string): SessionDotKind | undefined =>
+    sessionDotKind({
+      id,
+      summary: sessions[id],
+      status: statuses.get(id) as SessionStatus | undefined,
+      current,
+    });
+  const statusDot = (kind: SessionDotKind | undefined) => {
+    if (kind === undefined) return null;
+    const { style, className } = dotPresentation(kind, STATUS_DOT_SIZE);
+    return <span className={className} style={style} title={SESSION_DOT_LABEL[kind]} />;
   };
 
   const renderGroupSection = (arg: {
@@ -1701,12 +1701,12 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
                     }} />
                   ) : null}
                   <span style={{ flex: "none", width: 16, display: "inline-flex", justifyContent: "center", color: "var(--dsw-alias-label-tertiary)" }}>
-                    {statusDot(id, s)}
+                    {statusDot(dotKindOf(id))}
                   </span>
                   <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{label}</span>
                   <span className="fm-wb-row-actions" style={{ display: "inline-flex", gap: ROW_ACTION_GAP, flex: "none" }}>
-                    <Button size="sm" variant="ghost" icon={<IconListPenOutline16 size={16} />} style={ROW_ACTION_BUTTON_STYLE} title="重命名会话" aria-label="重命名会话" onClick={(e) => { e.stopPropagation(); setRenameTarget({ kind: "session", id, title: label, brief: annotationsForWorkspace(arg.workspaceId).sessions[id]?.brief ?? "", workspaceId: arg.workspaceId }); }} />
-                    <Button size="sm" variant="ghost" icon={<IconArchiveOutline20 size={16} />} style={ROW_ACTION_BUTTON_STYLE} title="归档会话" aria-label="归档会话" onClick={(e) => { e.stopPropagation(); setConfirmTarget({ kind: "session", id, title: label }); }} />
+                    <Button size="sm" variant="ghost" icon={<IconListPenOutlineMedium size={16} />} style={ROW_ACTION_BUTTON_STYLE} title="重命名会话" aria-label="重命名会话" onClick={(e) => { e.stopPropagation(); setRenameTarget({ kind: "session", id, title: label, brief: annotationsForWorkspace(arg.workspaceId).sessions[id]?.brief ?? "", workspaceId: arg.workspaceId }); }} />
+                    <Button size="sm" variant="ghost" icon={<IconArchiveOutlineMedium size={16} />} style={ROW_ACTION_BUTTON_STYLE} title="归档会话" aria-label="归档会话" onClick={(e) => { e.stopPropagation(); setConfirmTarget({ kind: "session", id, title: label }); }} />
                   </span>
                 </div>
               );
@@ -1719,12 +1719,13 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
   return (
     <div style={{ fontSize: FONT_SECONDARY, lineHeight: 1.5, userSelect: "none", color: "var(--dsw-alias-label-primary)", height: "100%", display: "flex", flexDirection: "column" }}>
       <style>{BROWSER_CSS}</style>
+      <style>{STATUS_DOT_CSS}</style>
       {/* 标题栏行保持侧栏黑色底，底部一条黑灰边界线与内容区区分（内容区不铺色）。
           padding-right 34：按钮组右端贴近右上角固定折叠键（fm-fold-btn，左缘距容器右 30px，
           留 4px 间隙；坐标恒定不动）。 */}
       <div style={{ flex: "none", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 34px 4px 4px", background: "var(--dsw-specific-sidebar-fill)", borderBottom: HEADER_BORDER }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-          <IconFolderOpen16 size={16} />
+          <IconFolderOpenMedium size={16} />
           工作区
         </span>
         {/* 标题栏右侧按钮组：key=toolbarKey（每次展开递增 → 重挂载 → stagger 滑入动画重放，
@@ -1753,13 +1754,13 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
             style={{ ...ICON_BTN_STYLE, animationDelay: "40ms" }}
             size="sm"
             variant="ghost"
-            icon={<IconNewChatOutline16 size={16} />}
+            icon={<IconNewChatOutlineMedium size={16} />}
             title="新对话（当前选中分组）"
             aria-label="新对话（当前选中分组）"
             data-myagent-new-chat
             onClick={() => handleNewChat()}
           />
-          <Button className="fm-tb-btn" style={{ ...ICON_BTN_STYLE, animationDelay: "80ms" }} size="sm" variant="ghost" icon={<IconProjectAddOutline16 size={16} />} title="新工作区" aria-label="新工作区" onClick={() => run(() => props.addWorkspace?.())} />
+          <Button className="fm-tb-btn" style={{ ...ICON_BTN_STYLE, animationDelay: "80ms" }} size="sm" variant="ghost" icon={<IconProjectAddOutlineMedium size={16} />} title="新工作区" aria-label="新工作区" onClick={() => run(() => props.addWorkspace?.())} />
         </span>
       </div>
       {/* 列表滚动区：滚动条上界在标题栏下方（标题栏不参与滚动）；scrollLock（区容器过渡期间）
@@ -1881,17 +1882,17 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
               >
                 {/* 固定宽度图标列：Folder（展开/收起），hover 时被三角箭头替换（原生同款）。 */}
                 <span className="fm-wb-ws-folder" style={{ flex: "none", width: 16, display: "inline-flex", justifyContent: "center", color: "var(--dsw-alias-label-secondary)" }}>
-                  {isCollapsed ? <IconFolderClose16 size={16} /> : <IconFolderOpen16 size={16} />}
+                  {isCollapsed ? <IconFolderCloseMedium size={16} /> : <IconFolderOpenMedium size={16} />}
                 </span>
                 <span className="fm-wb-ws-chevron" style={{ flex: "none", width: 16, display: "inline-flex", justifyContent: "center", color: "var(--dsw-alias-label-caption)" }}>
-                  <IconTriangleRightFill14 size={14} className={`fm-wb-arrow${isCollapsed ? "" : " fm-wb-arrow-open"}`} />
+                  <IconTriangleRightFillMedium size={14} className={`fm-wb-arrow${isCollapsed ? "" : " fm-wb-arrow-open"}`} />
                 </span>
                 <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{w.title ?? w.path}</span>
                 <span className="fm-wb-row-actions" style={{ display: "inline-flex", gap: ROW_ACTION_GAP, flex: "none" }}>
                   <Button
                     size="sm"
                     variant="ghost"
-                    icon={<IconPlusOutline16 size={16} />}
+                    icon={<IconPlusOutlineMedium size={16} />}
                     style={ROW_ACTION_BUTTON_STYLE}
                     title="新建分组"
                     aria-label="新建分组"
@@ -1900,8 +1901,8 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
                       setGroupAction({ kind: "create", workspaceId: w.workspaceId });
                     }}
                   />
-                  <Button size="sm" variant="ghost" icon={<IconEditOutline16 size={16} />} style={ROW_ACTION_BUTTON_STYLE} title="重命名工作区" aria-label="重命名工作区" onClick={(e) => { e.stopPropagation(); setRenameTarget({ kind: "workspace", id: w.workspaceId, title: w.title ?? w.path, brief: annotationsForWorkspace(w.workspaceId).workspaces[w.workspaceId]?.brief ?? "", workspaceId: w.workspaceId }); }} />
-                  <Button size="sm" variant="ghost" icon={<IconTrashOutline16 size={16} />} style={{ ...ROW_ACTION_BUTTON_STYLE, color: "var(--dsw-alias-state-error-primary)" }} title="删除工作区" aria-label="删除工作区" onClick={(e) => { e.stopPropagation(); setConfirmTarget({ kind: "workspace", id: w.workspaceId, title: w.title ?? w.path }); }} />
+                  <Button size="sm" variant="ghost" icon={<IconEditOutlineMedium size={16} />} style={ROW_ACTION_BUTTON_STYLE} title="重命名工作区" aria-label="重命名工作区" onClick={(e) => { e.stopPropagation(); setRenameTarget({ kind: "workspace", id: w.workspaceId, title: w.title ?? w.path, brief: annotationsForWorkspace(w.workspaceId).workspaces[w.workspaceId]?.brief ?? "", workspaceId: w.workspaceId }); }} />
+                  <Button size="sm" variant="ghost" icon={<IconTrashOutlineMedium size={16} />} style={{ ...ROW_ACTION_BUTTON_STYLE, color: "var(--dsw-alias-state-error-primary)" }} title="删除工作区" aria-label="删除工作区" onClick={(e) => { e.stopPropagation(); setConfirmTarget({ kind: "workspace", id: w.workspaceId, title: w.title ?? w.path }); }} />
                 </span>
               </div>
               {!isCollapsed ? (
@@ -2051,6 +2052,7 @@ function GroupDeleteDialog(props: {
       open
       onClose={props.onCancel}
       title={`删除分组“${props.groupName}”`}
+      closeLabel="关闭"
       description="组内聊天框要如何处理？"
       footer={
         <>
@@ -2130,7 +2132,7 @@ function GroupHeader(props: {
       {/* 图标由 folder 改为展开/收起 chevron：分组是可折叠小节，不是"另一层文件夹"。
           chevron 中心 = 16(padding-left) + 8(16px 图标槽一半) = 24px，导轨 ::before 正对这条线。 */}
       <span style={{ flex: "none", width: 16, display: "inline-flex", justifyContent: "center", color: "var(--dsw-alias-label-tertiary)" }}>
-        {props.collapsed ? <IconTriangleRightFill14 size={14} /> : <IconChevronDownOutline14 size={14} />}
+        {props.collapsed ? <IconTriangleRightFillMedium size={14} /> : <IconChevronDownOutlineMedium size={14} />}
       </span>
       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
         {props.name}
@@ -2143,7 +2145,7 @@ function GroupHeader(props: {
             <Button
               size="sm"
               variant="ghost"
-              icon={<IconNewChatOutline16 size={16} />}
+              icon={<IconNewChatOutlineMedium size={16} />}
               style={ROW_ACTION_BUTTON_STYLE}
               title="新对话（当前选中分组）"
               aria-label="新对话（当前选中分组）"
@@ -2155,10 +2157,10 @@ function GroupHeader(props: {
             />
           ) : null}
           {props.onRename ? (
-            <Button size="sm" variant="ghost" icon={<IconEditOutline16 size={16} />} style={ROW_ACTION_BUTTON_STYLE} title="重命名分组" aria-label="重命名分组" onClick={(e) => { e.stopPropagation(); props.onRename?.(); }} />
+            <Button size="sm" variant="ghost" icon={<IconEditOutlineMedium size={16} />} style={ROW_ACTION_BUTTON_STYLE} title="重命名分组" aria-label="重命名分组" onClick={(e) => { e.stopPropagation(); props.onRename?.(); }} />
           ) : null}
           {props.onDelete ? (
-            <Button size="sm" variant="ghost" icon={<IconTrashOutline16 size={16} />} style={{ ...ROW_ACTION_BUTTON_STYLE, color: "var(--dsw-alias-state-error-primary)" }} title="删除分组" aria-label="删除分组" onClick={(e) => { e.stopPropagation(); props.onDelete?.(); }} />
+            <Button size="sm" variant="ghost" icon={<IconTrashOutlineMedium size={16} />} style={{ ...ROW_ACTION_BUTTON_STYLE, color: "var(--dsw-alias-state-error-primary)" }} title="删除分组" aria-label="删除分组" onClick={(e) => { e.stopPropagation(); props.onDelete?.(); }} />
           ) : null}
         </span>
       ) : null}

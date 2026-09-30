@@ -8,12 +8,12 @@
 import React, { useState } from "react";
 import {
   Button,
-  IconCheckOutline16,
-  IconChevronDownOutline14,
-  IconChevronUpOutline14,
-  IconCloseOutline16,
-  IconLoadingOutline16,
-  IconRefreshOutline16,
+  IconCheckOutlineMedium,
+  IconChevronDownOutlineMedium,
+  IconChevronUpOutlineMedium,
+  IconCloseOutlineMedium,
+  IconLoadingOutlineMedium,
+  IconRefreshOutlineMedium,
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import type { OrganizerAgentInfo, OrganizerRunSummary, OrganizerUsage } from "./api.ts";
 import { TopHatIcon } from "./TopHatIcon.tsx";
@@ -21,7 +21,7 @@ import { RADIUS } from "./ui-kit.ts";
 
 /**
  * 面板局部样式。只做两件事：
- *  ① 把 `IconLoadingOutline16` 从静态缺口弧变成真正在转的转圈（官方图标本身不带动画）；
+ *  ① 把 `IconLoadingOutlineMedium` 从静态缺口弧变成真正在转的转圈（官方图标本身不带动画）；
  *  ② 明细按钮的悬停底色（走官方 interactive-bg-hover token，不硬编码色值）。
  * 与 RailPanel / WorkspaceBrowser 一样，用组件内 `<style>` 注入，命名统一 fm-op-* 前缀。
  */
@@ -109,7 +109,7 @@ function ResultBlock(props: {
             style={detailButtonStyle}
           >
             {open ? "收起明细" : `查看明细（${count}）`}
-            {open ? <IconChevronUpOutline14 size={14} /> : <IconChevronDownOutline14 size={14} />}
+            {open ? <IconChevronUpOutlineMedium size={14} /> : <IconChevronDownOutlineMedium size={14} />}
           </button>
         ) : null}
       </div>
@@ -128,7 +128,7 @@ function ResultBlock(props: {
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 2 }}>
             <button type="button" className="fm-op-detail" onClick={() => setOpen(false)} style={detailButtonStyle}>
               收起明细
-              <IconChevronUpOutline14 size={14} />
+              <IconChevronUpOutlineMedium size={14} />
             </button>
           </div>
         </>
@@ -178,7 +178,7 @@ export function OrganizePanel(props: {
       <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", borderBottom: "1px solid var(--dsw-alias-border-l1)" }}>
         <TopHatIcon size={16} />
         <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>区管家</span>
-        <Button size="sm" variant="ghost" icon={<IconCloseOutline16 size={16} />} style={{ width: 28, height: 28, padding: 0 }} title="关闭区管家" aria-label="关闭区管家" onClick={props.onClose} />
+        <Button size="sm" variant="ghost" icon={<IconCloseOutlineMedium size={16} />} style={{ width: 28, height: 28, padding: 0 }} title="关闭区管家" aria-label="关闭区管家" onClick={props.onClose} />
       </div>
 
       <div className="fm-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "0 10px 12px" }}>
@@ -203,9 +203,9 @@ export function OrganizePanel(props: {
             disabled={busy}
             icon={
               props.updating ? (
-                <IconLoadingOutline16 size={16} className="fm-op-spin" />
+                <IconLoadingOutlineMedium size={16} className="fm-op-spin" />
               ) : (
-                <IconRefreshOutline16 size={16} />
+                <IconRefreshOutlineMedium size={16} />
               )
             }
             onClick={props.onUpdateAll}
@@ -220,9 +220,9 @@ export function OrganizePanel(props: {
             disabled={busy}
             icon={
               props.organizing ? (
-                <IconLoadingOutline16 size={16} className="fm-op-spin" />
+                <IconLoadingOutlineMedium size={16} className="fm-op-spin" />
               ) : (
-                <IconCheckOutline16 size={16} />
+                <IconCheckOutlineMedium size={16} />
               )
             }
             onClick={props.onOrganizeGroups}

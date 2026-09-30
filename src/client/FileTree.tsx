@@ -16,18 +16,18 @@ import { FileBadge } from "./FileBadge.tsx";
 import { FileIcon } from "./file-icon.tsx";
 import {
   Button,
-  IconBrowseOutline16,
-  IconCheckOutline16,
-  IconChevronDownOutline14,
-  IconCopyOutline16,
-  IconEditOutline16,
-  IconFolderClose16,
-  IconFolderOpenOutline16,
-  IconPlusOutline16,
-  IconRefreshOutline16,
-  IconRightUpOutline16,
-  IconTrashOutline16,
-  IconTriangleRightFill14,
+  IconBrowseOutlineMedium,
+  IconCheckOutlineMedium,
+  IconChevronDownOutlineMedium,
+  IconCopyOutlineMedium,
+  IconEditOutlineMedium,
+  IconFolderCloseMedium,
+  IconFolderOpenOutlineMedium,
+  IconPlusOutlineMedium,
+  IconRefreshOutlineMedium,
+  IconRightUpOutlineMedium,
+  IconTrashOutlineMedium,
+  IconTriangleRightFillMedium,
   Menu,
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import type { Api } from "./api.ts";
@@ -176,14 +176,14 @@ export function FileTree({ api, onOpenFile, headerExtra, toolbarKey, scrollLock 
       items.push({
         key: "toggle",
         label: open ? "收起" : "展开",
-        icon: open ? <IconChevronDownOutline14 size={14} /> : <IconTriangleRightFill14 size={14} />,
+        icon: open ? <IconChevronDownOutlineMedium size={14} /> : <IconTriangleRightFillMedium size={14} />,
         onSelect: () => (isRoot ? setRootOpen((v) => !v) : void toggleDir(entry)),
       });
     } else {
       items.push({
         key: "open",
         label: "打开",
-        icon: <IconBrowseOutline16 size={16} />,
+        icon: <IconBrowseOutlineMedium size={16} />,
         onSelect: () => onOpenFile(entry.path),
       });
     }
@@ -192,7 +192,7 @@ export function FileTree({ api, onOpenFile, headerExtra, toolbarKey, scrollLock 
     items.push({
       key: "copy-path",
       label: copiedPath ? "已复制 ✓" : "复制项目地址",
-      icon: copiedPath ? <IconCheckOutline16 size={16} /> : <IconCopyOutline16 size={16} />,
+      icon: copiedPath ? <IconCheckOutlineMedium size={16} /> : <IconCopyOutlineMedium size={16} />,
       keepOpen: true,
       onSelect: () => {
         void copyTextToClipboard(resolveAbsPath(api.root, entry.path)).then((ok) => {
@@ -211,13 +211,13 @@ export function FileTree({ api, onOpenFile, headerExtra, toolbarKey, scrollLock 
     items.push({
       key: "new-file",
       label: "新建文件",
-      icon: <IconPlusOutline16 size={16} />,
+      icon: <IconPlusOutlineMedium size={16} />,
       onSelect: () => setDialog({ kind: "new-file", base: isDir ? entry.path : parent }),
     });
     items.push({
       key: "new-folder",
       label: "新建文件夹",
-      icon: <IconFolderClose16 size={16} />,
+      icon: <IconFolderCloseMedium size={16} />,
       onSelect: () => setDialog({ kind: "new-folder", base: isDir ? entry.path : parent }),
     });
     items.push({ key: "sep2", separator: true });
@@ -225,13 +225,13 @@ export function FileTree({ api, onOpenFile, headerExtra, toolbarKey, scrollLock 
       items.push({
         key: "rename",
         label: "重命名",
-        icon: <IconEditOutline16 size={16} />,
+        icon: <IconEditOutlineMedium size={16} />,
         onSelect: () => setDialog({ kind: "rename", entry, base: parent }),
       });
       items.push({
         key: "delete",
         label: "删除",
-        icon: <IconTrashOutline16 size={16} />,
+        icon: <IconTrashOutlineMedium size={16} />,
         danger: true,
         confirmLabel: "确认删除？",
         onSelect: () => void runOp("remove", entry.path),
@@ -239,7 +239,7 @@ export function FileTree({ api, onOpenFile, headerExtra, toolbarKey, scrollLock 
       items.push({
         key: "move",
         label: "移动…",
-        icon: <IconRightUpOutline16 size={16} />,
+        icon: <IconRightUpOutlineMedium size={16} />,
         onSelect: () => setDialog({ kind: "move", entry, base: parent }),
       });
     }
@@ -247,7 +247,7 @@ export function FileTree({ api, onOpenFile, headerExtra, toolbarKey, scrollLock 
     items.push({
       key: "refresh",
       label: "刷新",
-      icon: <IconRefreshOutline16 size={16} />,
+      icon: <IconRefreshOutlineMedium size={16} />,
       onSelect: () => void reload(),
     });
     return items;
@@ -289,10 +289,10 @@ export function FileTree({ api, onOpenFile, headerExtra, toolbarKey, scrollLock 
           }}
         >
           <span style={{ flex: "none", width: 14, display: "inline-flex", justifyContent: "center", color: "var(--dsw-alias-label-tertiary)" }}>
-            {entry.kind === "dir" ? (openDirs[entry.path] ? <IconChevronDownOutline14 size={14} /> : <IconTriangleRightFill14 size={14} />) : null}
+            {entry.kind === "dir" ? (openDirs[entry.path] ? <IconChevronDownOutlineMedium size={14} /> : <IconTriangleRightFillMedium size={14} />) : null}
           </span>
           <span style={{ flex: "none", display: "inline-flex", color: "var(--dsw-alias-label-tertiary)" }}>
-            {entry.kind === "dir" ? (openDirs[entry.path] ? <IconFolderOpenOutline16 size={16} /> : <IconFolderClose16 size={16} />) : <FileIcon name={entry.name} size={16} />}
+            {entry.kind === "dir" ? (openDirs[entry.path] ? <IconFolderOpenOutlineMedium size={16} /> : <IconFolderCloseMedium size={16} />) : <FileIcon name={entry.name} size={16} />}
           </span>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{entry.name}</span>
         </div>
@@ -327,8 +327,8 @@ export function FileTree({ api, onOpenFile, headerExtra, toolbarKey, scrollLock 
                   open={toolbarOpen}
                   onClose={() => setToolbarOpen(false)}
                   items={[
-                    { id: "new-file", label: "新建文件", icon: <IconPlusOutline16 size={16} /> },
-                    { id: "new-folder", label: "新建文件夹", icon: <IconFolderClose16 size={16} /> },
+                    { id: "new-file", label: "新建文件", icon: <IconPlusOutlineMedium size={16} /> },
+                    { id: "new-folder", label: "新建文件夹", icon: <IconFolderCloseMedium size={16} /> },
                   ]}
                   onSelect={(id) => {
                     setToolbarOpen(false);
@@ -337,10 +337,10 @@ export function FileTree({ api, onOpenFile, headerExtra, toolbarKey, scrollLock 
                   }}
                   portal
                   anchor={
-                    <Button className="fm-tb-btn" style={{ ...ICON_BTN_STYLE, animationDelay: "0ms" }} size="sm" variant="ghost" icon={<IconPlusOutline16 size={16} />} title="新建文件或文件夹" aria-label="新建文件或文件夹" onClick={() => setToolbarOpen((v) => !v)} />
+                    <Button className="fm-tb-btn" style={{ ...ICON_BTN_STYLE, animationDelay: "0ms" }} size="sm" variant="ghost" icon={<IconPlusOutlineMedium size={16} />} title="新建文件或文件夹" aria-label="新建文件或文件夹" onClick={() => setToolbarOpen((v) => !v)} />
                   }
                 />
-                <Button className="fm-tb-btn" style={{ ...ICON_BTN_STYLE, animationDelay: "40ms" }} size="sm" variant="ghost" icon={<IconRefreshOutline16 size={16} />} title="刷新" aria-label="刷新" onClick={() => void reload()} />
+                <Button className="fm-tb-btn" style={{ ...ICON_BTN_STYLE, animationDelay: "40ms" }} size="sm" variant="ghost" icon={<IconRefreshOutlineMedium size={16} />} title="刷新" aria-label="刷新" onClick={() => void reload()} />
               </span>
             </div>
             {/* 树滚动区：滚动条上界在标题栏下方；scrollLock（区容器过渡期间）置 hidden 避免
@@ -400,10 +400,10 @@ export function FileTree({ api, onOpenFile, headerExtra, toolbarKey, scrollLock 
                     }}
                   >
                     <span style={{ flex: "none", width: 14, display: "inline-flex", justifyContent: "center", color: "var(--dsw-alias-label-tertiary)" }}>
-                      {rootOpen ? <IconChevronDownOutline14 size={14} /> : <IconTriangleRightFill14 size={14} />}
+                      {rootOpen ? <IconChevronDownOutlineMedium size={14} /> : <IconTriangleRightFillMedium size={14} />}
                     </span>
                     <span style={{ flex: "none", display: "inline-flex", color: "var(--dsw-alias-label-tertiary)" }}>
-                      {rootOpen ? <IconFolderOpenOutline16 size={16} /> : <IconFolderClose16 size={16} />}
+                      {rootOpen ? <IconFolderOpenOutlineMedium size={16} /> : <IconFolderCloseMedium size={16} />}
                     </span>
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{api.root}</span>
                   </div>

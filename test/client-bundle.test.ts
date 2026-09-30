@@ -300,7 +300,9 @@ const WORKSPACES = {
   items: [{ workspaceId: "w1", path: "D:/ws", title: "ws", sessionIds: ["s1"] }],
   archivedSessionIds: [],
 };
-const SESSIONS = { byId: { s1: { id: "s1", title: "会话一" } }, current: "s1" };
+// dsh 0.2：当前会话不再由 `current` 字段表达，而是本地引用来源 `retainedBy.mainView`
+// （官方 ui-workspace 的推导口径）；此处按 0.2 形状给摘要。
+const SESSIONS = { byId: { s1: { id: "s1", title: "会话一", retainedBy: { mainView: 1 } } } };
 
 test("apply() 在槽位尚未声明时不抛错（旧版直连注册会在此崩掉整个 loader 条目）", () => {
   const ledger = new SlotLedgerStub();
@@ -605,13 +607,21 @@ const RAIL_WORKSPACES = {
 };
 const RAIL_SESSIONS = {
   byId: {
-    "s-run": { id: "s-run", title: "正在跑的活", running: true },
-    "s-wait": { id: "s-wait", title: "等批准的活", pendingInteraction: "approval" },
+    // dsh 0.2：当前会话按 `retainedBy.mainView` 推导（SessionListState 已无 current 字段）。
+    "s-run": { id: "s-run", title: "正在跑的活", running: true, retainedBy: { mainView: 1 } },
+    "s-wait": { id: "s-wait", title: "等批准的活" },
     "s-idle": { id: "s-idle", title: "闲着的活" },
-    "s-done": { id: "s-done", title: "已完成的活", completed: true },
+    "s-done": { id: "s-done", title: "已完成的活" },
   },
-  current: "s-run",
 };
+// dsh 0.2：run/wait/done 三个位都来自全局标准套件的 useSessionStatus
+// （SessionStatus = { running, pendingInteraction, completionUnread }），不再读会话摘要字段。
+const RAIL_STATUSES = new Map<string, unknown>([
+  ["s-run", { running: true, completionUnread: false }],
+  ["s-wait", { running: true, pendingInteraction: { kind: "approval", sessionId: "s-wait" }, completionUnread: false }],
+  ["s-idle", { running: false, completionUnread: false }],
+  ["s-done", { running: false, completionUnread: true }],
+]);
 
 function renderRail(): string {
   const ledger = new SlotLedgerStub();
@@ -624,6 +634,7 @@ function renderRail(): string {
     React.createElement(entry.component as React.ComponentType<Record<string, unknown>>, {
       useSessions: (sel: (s: unknown) => unknown) => sel(RAIL_SESSIONS),
       useWorkspaces: (sel: (s: unknown) => unknown) => sel(RAIL_WORKSPACES),
+      useSessionStatus: (sel: (s: unknown) => unknown) => sel(RAIL_STATUSES),
       wide: false,
       expandSidebar: () => {},
       ...injectFace,
@@ -690,10 +701,10 @@ function bundleHas(bundle: string, text: string): boolean {
 
 test("区管家面板：更新中的图标是**在转的**（挂 fm-op-spin + CSS 真有 keyframes）", () => {
   const src = ORGANIZE_PANEL_SRC();
-  // 官方 IconLoadingOutline16 只是一段静态缺口弧，不自带动画 —— 必须由本插件补 keyframes。
+  // 官方 IconLoadingOutlineMedium 只是一段静态缺口弧，不自带动画 —— 必须由本插件补 keyframes。
   assert.match(src, /@keyframes fm-op-spin\{from\{transform:rotate\(0deg\)\}to\{transform:rotate\(360deg\)\}\}/);
   assert.match(src, /\.fm-op-spin\{animation:fm-op-spin 1s linear infinite/);
-  const spinning = src.match(/<IconLoadingOutline16[^>]*className="fm-op-spin"/g) ?? [];
+  const spinning = src.match(/<IconLoadingOutlineMedium[^>]*className="fm-op-spin"/g) ?? [];
   assert.equal(spinning.length, 2, "「更新中」与「整理中」两颗图标都要转");
   assert.match(src, /props\.updating \? \(/, "更新态才换成转圈图标");
   assert.match(src, /props\.organizing \? \(/, "整理态才换成转圈图标");

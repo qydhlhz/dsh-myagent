@@ -9,7 +9,7 @@
 // 两区独立折叠（UI 轮新增"边缘窄条 + 让位"；区文件树本轮恢复收起按钮，改为"向上收起"：
 // 区文件树收起后窄条渲染在容器顶部、工作区区占满）。wsCollapsed / fsCollapsed 各自独立、
 // localStorage 持久化（fm.ws-collapsed / fm.fs-collapsed）。折叠切换按钮经 headerExtra prop
-// 注入各区标题栏右侧（icon-only，IconPanelLeftOutline16）。折叠态布局：
+// 注入各区标题栏右侧（icon-only，IconPanelLeftOutlineMedium）。折叠态布局：
 //   - 收起工作区区 → 顶部 32px 边缘窄条，区文件树占满（向下让位）。
 //   - 收起区文件树 → 窄条在容器最顶部（向上收起），工作区区占满。
 //   - 两区都收起：文件窄条 + 工作区窄条 + 中间留空。分割线仅两区都展开时显示。
@@ -17,7 +17,7 @@
 //     空间），直接返回 **RailPanel** —— 两颗区标（工作区 / 文件树）+ 正在进行的任务点列，
 //     不再渲染工作区图标列表（旧的"点文件夹 = 新建对话"由此消失）。
 import React, { useRef, useState } from "react";
-import { IconFolderClose16, IconPanelLeftOutline16 } from "@deepseek-ai/dsh-client-ui-primitives";
+import { IconFolderCloseMedium, IconPanelLeftOutlineMedium } from "@deepseek-ai/dsh-client-ui-primitives";
 import { WorkspaceBrowser, type WorkspaceBrowserProps } from "./WorkspaceBrowser.tsx";
 import { FileTree } from "./FileTree.tsx";
 import { FileBadgeFrame } from "./FileBadge.tsx";
@@ -179,7 +179,7 @@ function foldButton(label: string, collapsed: boolean, onClick: () => void) {
       aria-expanded={!collapsed}
       onClick={onClick}
     >
-      <IconPanelLeftOutline16 size={16} />
+      <IconPanelLeftOutlineMedium size={16} />
     </button>
   );
 }
@@ -285,6 +285,7 @@ export function SidebarComposite(props: SidebarCompositeProps) {
         <RailPanel
           useSessions={props.useSessions}
           useWorkspaces={props.useWorkspaces}
+          useSessionStatus={props.useSessionStatus}
           expandSidebar={props.expandSidebar}
           onRevealWorkspace={(workspaceId) => setRevealWorkspaceId(workspaceId ?? null)}
           // 文件树切回"跟着当前会话走"：清掉手动选的区标签，root 即回到当前主对话的根。
@@ -347,8 +348,8 @@ export function SidebarComposite(props: SidebarCompositeProps) {
             onRevealed={() => setRevealWorkspaceId(null)}
           />
         </div>
-        {/* 工作区区标：展开 = 打开的文件夹（标题栏 IconFolderOpen16）；收起 = 原版关闭的文件夹 */}
-        <EdgeStrip icon={<IconFolderClose16 size={16} />} title="工作区" label="展开工作区" onClick={toggleWs} border="bottom" hidden={!wsCollapsed} />
+        {/* 工作区区标：展开 = 打开的文件夹（标题栏 IconFolderOpenMedium）；收起 = 原版关闭的文件夹 */}
+        <EdgeStrip icon={<IconFolderCloseMedium size={16} />} title="工作区" label="展开工作区" onClick={toggleWs} border="bottom" hidden={!wsCollapsed} />
         {foldButton(wsCollapsed ? "展开工作区" : "收起工作区", wsCollapsed, toggleWs)}
       </div>
       {/* 分割线：工作区区（上方）展开即可拖（区文件树收起也不影响）；工作区区收起时隐藏。 */}

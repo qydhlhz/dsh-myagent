@@ -7,7 +7,7 @@
 
 - Node.js ≥ 24（`npm run check` 直接跑 TypeScript，靠 Node 内置的类型剥离；Node 22.x 需要自己加
   `--experimental-strip-types`）
-- 本机装有 dsh `0.1.5-rc`（跑 `npm run smoke` 用；找不到时用 `DSH_APP_BOOT` 指定路径）
+- 本机装有 dsh `0.2.0-rc`（跑 `npm run smoke` 用；找不到时用 `DSH_APP_BOOT` 指定路径）
 
 ## 本地流程
 

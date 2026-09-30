@@ -45,6 +45,7 @@ import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { SidebarComposite } from "./SidebarComposite.tsx";
 import { Api } from "./api.ts";
 import {
+  mainSessionId,
   resolveRoot,
   resolveAbsPath,
   sessionForRoot,
@@ -64,10 +65,16 @@ import { getMode, subscribeMode } from "./mode-store.ts";
 import { FONT_SECONDARY } from "./ui-kit.ts";
 
 // 客户端插件服务依赖：slots 注册槽位；sessions/workspaces 推导工作区根与会话；
+// **uiWorkspace** 承担 UI 级导航与目录选择——0.1.5 起 pickDirectory/startSession 已从
+// workspaces 控制器**移到** uiWorkspace（源码实证：dsh-client-ui-workspace 的 UiWorkspaceService
+// `super(ctx, "uiWorkspace")` 暴露 openSession/openWorkspace/forkSession/startSession/
+// archiveSession/pickDirectory/listDirectory/createDirectory；dsh-api-workspace-controller 的
+// WorkspaceController `super(ctx, "workspaces")` 只留 create/rename/delete/insertBefore/
+// archiveSession/insertSessionBefore + list）。两个服务并存，按用途分开注入。
 // sidebarRight 打开右栏预览标签页（导航控制器）；sidebarRightTabs 用于接管官方文件树类型
 // （见 registerEnhancements 里"取消官方文件树"一段）。
 // layout 已不需要：details 槽在 0.1.5 中删除。
-const inject = ["slots", "sessions", "workspaces", "sidebarRight", "sidebarRightTabs"] as const;
+const inject = ["slots", "sessions", "workspaces", "uiWorkspace", "sidebarRight", "sidebarRightTabs"] as const;
 
 /**
  * 官方右栏文件树的 kind（@deepseek-ai/dsh-client-ui-sidebar-files 注册的**页面**类型）。
@@ -85,31 +92,30 @@ function buildActions(ctx: any) {
   return () => ({
     startSession: async (workspaceId?: string) => {
       // 强制新建独立空白会话，不复用已有空白会话（否则连续点“新对话”会没反应）。
-      let target = workspaceId;
-      if (target === undefined) {
-        const ws = ctx.workspaces.list.getSnapshot();
-        const sessions = ctx.sessions.list.getSnapshot();
-        const currentWorkspaceId =
-          sessions.current === undefined
-            ? undefined
-            : ws.items.find((item: any) => (item.sessionIds ?? []).includes(sessions.current))?.workspaceId;
-        target = currentWorkspaceId ?? ws.recentWorkspaceId;
-      }
-      if (target === undefined) {
-        ctx.workspaces.startSession();
+      // 0.2：`ctx.sessions.open` 已不存在（导航归视图所有者），打开会话一律走
+      // ctx.uiWorkspace.openSession；而"当前/最近工作区"的回退也已内建在
+      // uiWorkspace.startSession 里（0.2 的 WorkspaceSnapshot 没有 recentWorkspaceId），
+      // 所以未指定工作区时直接委托给它，不再自己推导。
+      if (workspaceId === undefined) {
+        ctx.uiWorkspace.startSession();
         return;
       }
-      const sessionId = await ctx.sessions.create({ workspaceId: target });
-      ctx.sessions.open(sessionId);
+      const sessionId = await ctx.sessions.create({ workspaceId });
+      ctx.uiWorkspace.openSession(sessionId);
     },
-    // 新建工作区：宿主原生目录选择器选一个已存在目录 → workspace.create 注册。
+    // 新建工作区：宿主原生目录选择器选一个已存在目录 → workspaces.create 注册。
+    // pickDirectory 在 uiWorkspace 上（0.1.5 起从 workspaces 控制器移走）：内部走
+    // Remote `directoryPicker.pick` → 宿主 directoryPickerController → directory-picker-auto
+    // 组合的 native 能力；非 native 组合（远程浏览式）会抛错，由调用方
+    // WorkspaceBrowser 的 `.catch(window.alert("操作失败：…"))` 兜底提示。
     addWorkspace: async () => {
-      const path = await ctx.workspaces.pickDirectory();
+      const path = await ctx.uiWorkspace.pickDirectory();
       if (path === null) return; // 用户取消，静默
       await ctx.workspaces.create({ path });
     },
     open: (sessionId: string) => {
-      ctx.sessions.open(sessionId);
+      // 0.2：会话导航归视图所有者（uiWorkspace），sessions 只管目录与引用。
+      ctx.uiWorkspace.openSession(sessionId);
     },
     renameSession: async (sessionId: string, title: string) => {
       const session = ctx.sessions.binding(sessionId)?.session;
@@ -305,7 +311,8 @@ function ComposedInner(props: any) {
   const ctx = appliedCtx;
 
   // 切换会话时放弃显式选择：让文件树重新跟着会话走（点区标签的意图只属于"当前这一次"）。
-  const currentSession = sessions.current;
+  // 0.2：当前会话按 mainView 引用来源推导（SessionListState 已无 current 字段）。
+  const currentSession = mainSessionId(sessions);
   const lastSession = useRef<string | undefined>(currentSession);
   useEffect(() => {
     if (lastSession.current === currentSession) return;

@@ -37,7 +37,7 @@ export const hasHostFileIcons =
 export function FileIcon({ name, size = 16, className }: { name: string; size?: number; className?: string }) {
   if (!hasHostFileIcons) {
     // 旧宿主兜底：通用"浏览/文档"图标（与 0.1.0 版 FileTree 的行为一致）。
-    const Fallback = (primitives as unknown as { IconBrowseOutline16: FileTypeIconComponent }).IconBrowseOutline16;
+    const Fallback = (primitives as unknown as { IconBrowseOutlineMedium: FileTypeIconComponent }).IconBrowseOutlineMedium;
     return React.createElement(Fallback, { kind: "file", size, className });
   }
   return React.createElement(host.FileTypeIcon as FileTypeIconComponent, {

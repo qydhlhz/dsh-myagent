@@ -17,8 +17,10 @@ import { resummarizeSession, summarizeSession } from "./session-summary.js";
 import { resummarizeAllSessions, sessionMarker } from "./resummarize-all.js";
 
 const name = "myagent";
-// 宿主侧没有 "workspaces" 服务（该服务名只存在于浏览器半区，dsh-client-runtime
-// 提供）；宿主的工作沙盒服务叫 "workspaceRegistry"（dsh-workspace 提供）。两者都
+// 宿主侧没有 "workspaces" 服务（该服务名只存在于浏览器半区，由
+// @deepseek-ai/dsh-api-workspace-controller 提供；0.2 之前它在 dsh-client-runtime 里，
+// 那个包在 0.2 已删除并拆分）；宿主的工作沙盒服务叫 "workspaceRegistry"
+// （dsh-workspace 提供，0.2 仍在，list() 元素仍有 path）。两者都
 // 不注入：liveWorkspaceRoots 用 lenient 探测 + try/catch 降级，保证激活不因该服务缺失而失败。
 //
 // 【为什么必须声明 sessions / sessionPersistence / agents（2026-09-10 修复）】

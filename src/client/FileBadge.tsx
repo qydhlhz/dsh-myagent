@@ -1,4 +1,4 @@
-// src/client/FileBadge.tsx — 区文件树标（IconBrowseOutline16 同形，但内部涂灰）：
+// src/client/FileBadge.tsx — 区文件树标（IconBrowseOutlineMedium 同形，但内部涂灰）：
 // 内部区域用半透明 currentColor（与工作区文件树夹区标同色的灰色），外框/横线全色，
 // 保证线条仍可见。lines 控制内部两条横线（展开态有、收起态无）。
 const FRAME =
@@ -10,7 +10,7 @@ const LINE1 =
 const LINE2 =
   "M9.40858 7.84478V9.14557H4.75819V7.84478H9.40858Z";
 
-/** 区文件树标：与 IconBrowseOutline16 同形，内部涂灰色（半透明 currentColor，与工作区
+/** 区文件树标：与 IconBrowseOutlineMedium 同形，内部涂灰色（半透明 currentColor，与工作区
  *  文件夹区标同色系）；lines = 显示内部两条横线（展开态），收起态不传（横线消失）。 */
 export function FileBadge(props: { size?: number; lines?: boolean }) {
   const { size = 16, lines = false } = props;
@@ -28,7 +28,7 @@ export function FileBadge(props: { size?: number; lines?: boolean }) {
   );
 }
 
-/** 文件收起态区标：原 IconBrowseOutline16 外框（无内部灰色、无横线）。 */
+/** 文件收起态区标：原 IconBrowseOutlineMedium 外框（无内部灰色、无横线）。 */
 export function FileBadgeFrame(props: { size?: number }) {
   const { size = 16 } = props;
   return (
@@ -39,7 +39,7 @@ export function FileBadgeFrame(props: { size?: number }) {
 }
 
 /** 工作区收起态区标：用户（Illustrator）重绘版——灰色内部矩形（无圆角）+ 文件夹线条
- *  （同 IconFolderClose16 形状，viewBox 0 0 57.2 49.83）。 */
+ *  （同 IconFolderCloseMedium 形状，viewBox 0 0 57.2 49.83）。 */
 export function FolderBadge(props: { size?: number }) {
   const { size = 16 } = props;
   return (

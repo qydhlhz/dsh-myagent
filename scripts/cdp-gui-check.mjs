@@ -116,13 +116,13 @@ report.mode = (await evaluate(`localStorage.getItem("dsh-myagent.mode")`)).value
 report.bodyText = (
   await evaluate("document.body ? document.body.innerText.slice(0, 4000) : '(no body)'")
 ).value;
-// 正面证据：myagent 左栏复合的区标题（工作沙盒 / 沙盒文件）。
-report.hasWorkspaceHeading = (await evaluate("document.body.innerText.includes('工作沙盒')")).value;
-report.hasFileTreeHeading = (await evaluate("document.body.innerText.includes('沙盒文件')")).value;
-// 官方左栏的标题是"工作区"——它出现说明压槽没生效。
-report.hasOfficialWorkspaceHeading = (
-  await evaluate("document.body.innerText.includes('工作区')")
-).value;
+// 正面证据：myagent 左栏复合的两区区标（工作区 / 区文件树）。
+// 「区文件树」是插件独有的文案，官方侧栏从不渲染它 —— 用它做"增强层确实挂上了"的判据。
+report.hasFileTreeHeading = (await evaluate("document.body.innerText.includes('区文件树')")).value;
+report.hasWorkspaceHeading = (await evaluate("document.body.innerText.includes('工作区')")).value;
+// 插件自有的稳定 DOM 锚点（rail 模式的两颗区标）。
+report.hasRailWorkspace = (await evaluate(`document.querySelector('[data-myagent-rail="workspace"]') !== null`)).value;
+report.hasRailFiles = (await evaluate(`document.querySelector('[data-myagent-rail="files"]') !== null`)).value;
 report.regionText = (
   await evaluate(`(() => {
     const el = document.querySelector('[class*=regionArea]');
@@ -131,7 +131,7 @@ report.regionText = (
 ).value;
 // 错误边界兜底文案：出现即说明 Composed 渲染抛错被降级。
 report.errorBoundaryShown = (
-  await evaluate("document.body.innerText.includes('工作沙盒列表') && document.body.innerText.includes('重试')")
+  await evaluate("document.body.innerText.includes('组件渲染出错')")
 ).value;
 
 const failure = /Failed to load plugins|is not declared/i;

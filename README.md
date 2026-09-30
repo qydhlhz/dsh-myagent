@@ -1,7 +1,7 @@
 # DSH-MYAGENT (`dsh-myagent`)
 
 [![CI](https://github.com/qydhlhz/dsh-myagent/actions/workflows/ci.yml/badge.svg)](https://github.com/qydhlhz/dsh-myagent/actions/workflows/ci.yml)
-![dsh](https://img.shields.io/badge/dsh-0.1.5--rc-blue)
+![dsh](https://img.shields.io/badge/dsh-0.2.0--rc-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 **简体中文** | [English](README.en.md)
@@ -9,18 +9,28 @@
 > **MYAGENT.UI** —— 为 dsh 配置更好的工作区与文件树系统。
 > **区管家** —— 无需对话的 agent：一键维护工作区三级列表。
 
-dsh 0.1.5 起官方内置了文件树与预览。本项目**保留官方预览**、接管左侧栏：把
+dsh 0.2 起官方内置了文件树与预览。本项目**保留官方预览**、接管左侧栏：把
 **工作区 → 分组 → 会话**三级列表与区文件树合成一块左侧面板，并提供**一键切换
 MYAGENT 模式 / 标准模式**的按钮，随时还原官方界面。内置 **区管家** —— 一个不显示对话框的
 agent：读取各对话记忆，替你维护工作区分组，标题，简介。
 
-版本号与 dsh 一一对应（本版 **v0.1.5** ↔ dsh `0.1.5-rc`）；旧版插件会被 0.1.5 拒绝加载，**必须升级**。
+版本号与 dsh 一一对应（本版 **v0.2.0** ↔ dsh `0.2.0-rc`，同时适配桌面端与 `dsh web`）；
+dsh 0.2 收紧了插件契约，旧版插件会被 0.2 拒绝加载，**必须升级**。
 
 双半区 bundle（宿主 `lib/index.js` + 浏览器 `lib/client.js`），消费侧零第三方运行时依赖，`lib/` 已提交、装完即用：
 
 ```sh
-dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.1.5    # 装完重启 dsh web
+# Web（dsh web）
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0    # 装完重启 dsh
+
+# 桌面端（DeepSeek Harness 应用，profile 名为 desktop）
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.2.0
 ```
+
+> **桌面端安装**：桌面端自带一份 dsh 运行时，profile 名固定为 `desktop`
+> （`%DSH_HOME%\profiles\desktop`）。用应用安装目录里的 `resources\runtime\cli\bin\dsh.cmd`
+> 执行上面的命令即可（它会把命令交给应用自带的运行时）。也可以直接在 GUI 侧栏的
+> **插件**页里安装。**装完必须完全退出并重开应用**（bundle 层不热重载）。
 
 ## 界面
 
@@ -72,34 +82,60 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.1.5    # 装完重启
 
 ## 环境要求
 
-- dsh `0.1.5-rc`（0.1.5 起槽位系统改为"声明账本 + `slots.inject`"，本插件已按新契约重写；0.1.0-rc.6 及更早不再支持）
+- dsh `0.2.0-rc`（桌面端应用与 `dsh web` 都在此列）。本插件按 0.2 契约重写：
+  槽位用"声明账本 + `slots.inject`"；会话导航走 `uiWorkspace.openSession`；
+  会话状态统一读 `useSessionStatus`。**0.1.5-rc 及更早不再支持**。
 - 构建与测试：Node.js ≥ 22.13（测试直接运行 TypeScript）+ npm
 - 安装仓库版无需构建：`lib/` 构建产物已提交
 - 冒烟脚本 `npm run smoke` 需要能找到本机 dsh 的 `@deepseek-ai/dsh-app-boot`；找不到时用环境变量指定：
   `DSH_APP_BOOT=/path/to/@deepseek-ai/dsh-app-boot/lib/index.js npm run smoke`
 
+### 0.2 迁移要点（为什么旧版必须升级）
+
+| 变化 | 0.1.5 | 0.2 |
+|---|---|---|
+| 浏览器半区运行时包 | `@deepseek-ai/dsh-client-runtime` | 该包已删除；拆成 `dsh-client-modules` / `dsh-client-store` / `dsh-client-ui-renderer` |
+| 当前会话 | `useSessions()` 快照上的 `current` 字段 | 该字段已删除；按官方口径从 `byId[*].retainedBy.mainView` 推导 |
+| 会话导航 | `ctx.sessions.open(id)` | Session Controller 不再负责导航，改 `ctx.uiWorkspace.openSession(id)` |
+| 等待用户 / 已完成待读 | 全局 hook `useSessionPendingInteraction` | 已删除；改 `useSessionStatus`（`SessionStatus = { running, pendingInteraction, completionUnread }`） |
+| 图标组件 | `IconXxx16` / `IconXxx14`（按尺寸分号） | `IconXxxRegular` / `IconXxxMedium`（按笔画权重分号，尺寸走 `size` prop） |
+| `Modal` | `closeLabel` 可省略 | `closeLabel` **必填**（无障碍关闭按钮文案） |
+| cordis | `^4.0.1` | `~4.0.4` |
+
+> ⚠️ **官方 CSS 类名哈希跨构建不稳定，本插件的底栏 CSS 已改为不写死哈希。**
+> 官方侧栏的类名是 CSS Modules 哈希，前缀由**构建机的源码绝对路径**决定 —— 同一个
+> `0.2.0-rc.2` 在 npm 包与桌面端自带产物里就不同（`hHd-Xa_*` / `VOzbGW_*` vs
+> `_2H3hWW_*` / `wCInkW_*`，CSS 本体除哈希外逐字节一致）。所以
+> `src/client/settings-compact.ts` 一律用 `[class*="footArea"]` 这类**类名子串选择器**，
+> 两套哈希都命中；`test/settings-compact.test.ts` 锁死了"不得写回任何哈希前缀"。
+> 另外官方在 Windows 桌面端有一条
+> `[data-windows-titlebar] …_collapsed …_footArea{display:none}`（收起时整栏 0 宽），
+> 插件**有意不抢回** `display` —— 别给那条规则加 `!important`。
+
 ## 安装
 
 ```sh
-# 在线安装（GitHub 源，推荐锁定版本标签）
-dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.1.5
+# Web（dsh web）—— 在线安装，推荐锁定版本标签
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0
 
-# 或本地 tarball（npm pack 产物）
-dsh plugin --profile web add ./dsh-myagent-0.1.5.tgz
+# 桌面端 —— 用应用自带的 CLI 装进 desktop profile
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.2.0
 
 # 或本地源码目录（开发态）
 dsh plugin --profile web add ./dsh-myagent
 ```
 
-安装成功后 `dsh.profile.bundles` 会自动追加 `dsh-myagent`。**重启 `dsh web`** 使 bundle 层生效（bundle 不热重载）。
+安装成功后 `dsh.profile.bundles` 会自动追加 `dsh-myagent`。**重启 dsh / 完全重开桌面端应用**使 bundle 层生效（bundle 不热重载）。
 
 验证：
 
 ```sh
-dsh --profile web --dump-config   # 应出现 # == dsh-myagent 与插件行
+dsh --profile web --dump-config          # 应出现 # == dsh-myagent 与插件行
+# 桌面端：
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" --profile desktop --dump-config
 ```
 
-重启后在 GUI 设置 → 插件列表可见 `dsh-myagent`，侧栏出现工作区 / 区文件树面板。
+重启后在 GUI（侧栏**插件**页 / 设置 → 插件列表）可见 `dsh-myagent`，侧栏出现工作区 / 区文件树面板。
 
 ## 配置
 
@@ -133,14 +169,29 @@ npm run smoke     # bundle 契约 + patch 合成冒烟
 
 仓库已提交构建产物 `lib/`，安装无需构建步骤。**消费侧零第三方运行时依赖**：宿主半区无外部依赖；浏览器半区仅使用宿主 Web 应用模块表里的 `react` / `react-dom` / `@deepseek-ai/dsh-client-ui-primitives`。
 
-> ⚠️ **改了源码要重启 `dsh web`，光刷新浏览器不够。** 宿主把每个插件的客户端半区合并在
+> ⚠️ **改了源码要重启 dsh（桌面端则完全重开应用），光刷新浏览器不够。** 宿主把每个插件的客户端半区合并在
 > `/plugins/??…&rev=<hash>` 一个响应里返回，而这份产物是**进程启动时读进内存**的（`rev` 只跟
 > 插件清单走，不跟产物内容走）。实测（`.cache/freshness3.mjs` + `.cache/served-markers.mjs`，
 > 在同一个已启动实例上往 `lib/client.js` 追加标记再 `fetch(..., {cache:"no-store"})`）：
 > 追加后服务端仍返回追加前那份，**重启进程后**才带上标记。所以"改客户端半区只要刷新页面"
-> 是错的 —— `npm run build` 之后必须重启 `dsh web`。
+> 是错的 —— `npm run build` 之后必须重启 dsh。
 
 测试分两层：`test/*.ts` 覆盖宿主半区与纯函数；`test/client-bundle.test.ts` 直接加载**打好的 `lib/client.js`**，用复刻 dsh "声明账本"契约的槽位注册表桩跑 `apply()`，锁死插件加载期不再抛 `slot ... is not declared`，并服务端渲染左栏组件确认真的渲染出工作区 / 区文件树两区。
+
+### 真机验证（0.2）
+
+```sh
+# 1) 起一个带插件的真实实例（--port 0 由系统选空闲端口；--no-open 不弹浏览器）
+& 'D:\DSH\resources\runtime\cli\bin\dsh.cmd' --profile <测试 profile> --no-open --port 0
+
+# 2) 用 CDP 无头驱动真 Chrome 打开它，检查加载期报错 + 左栏是否真的渲染
+node scripts/cdp-gui-check.mjs "<上面打印的 URL（含 token）>"
+```
+
+`scripts/cdp-gui-check.mjs` 会断言：`__DSH_BOOT__` 在场、**没有** "Failed to load plugins" /
+"is not declared"、没有走 ErrorBoundary 降级、页面上真的出现「区文件树」。桌面端自带运行时
+（`app.asar` 里那份）与本机 npm 包的 CSS 类名哈希不同，所以底栏几何另有
+`.cache/fixture/check.mjs` 用**桌面端真实类名与官方规则**在真 Chrome 里实测。
 
 ## 目录结构
 

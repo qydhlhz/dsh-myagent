@@ -1,7 +1,7 @@
 # DSH-MYAGENT (`dsh-myagent`)
 
 [![CI](https://github.com/qydhlhz/dsh-myagent/actions/workflows/ci.yml/badge.svg)](https://github.com/qydhlhz/dsh-myagent/actions/workflows/ci.yml)
-![dsh](https://img.shields.io/badge/dsh-0.1.5--rc-blue)
+![dsh](https://img.shields.io/badge/dsh-0.2.0--rc-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 [简体中文](README.md) | **English**
@@ -9,22 +9,33 @@
 > **MYAGENT.UI** — a better workspace and file-tree system for dsh.
 > **Butler** — a dialog-free agent that maintains the three-level workspace list in one click.
 
-Since dsh 0.1.5 the official build ships its own file tree and preview. This project **keeps the
+Since dsh 0.2 the official build ships its own file tree and preview. This project **keeps the
 official preview** and takes over the left sidebar: it merges the three-level list
 (**workspace → group → session**) and the workspace file tree into one left-side panel, plus a
 **one-key toggle between MYAGENT mode and the standard mode** to restore the official UI at any time.
 It also ships **Butler**, an agent with no chat window of its own: it reads your
 conversations and maintains your workspace groups, titles and briefs for you.
 
-Version numbers track dsh (this release **v0.1.5** ↔ dsh `0.1.5-rc`); older plugin builds are
-rejected by 0.1.5, so **upgrading is required**.
+Version numbers track dsh (this release **v0.2.0** ↔ dsh `0.2.0-rc`, covering both the desktop app
+and `dsh web`); dsh 0.2 tightened the plugin contract, so older plugin builds are
+rejected and **upgrading is required**.
 
 A dual-half bundle (host `lib/index.js` + browser `lib/client.js`) with zero third-party runtime
 dependencies; `lib/` is committed — install and go:
 
 ```sh
-dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.1.5    # restart dsh web afterwards
+# Web (dsh web)
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0    # restart dsh afterwards
+
+# Desktop app (DeepSeek Harness; its profile is named `desktop`)
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.2.0
 ```
+
+> **Desktop install**: the desktop app bundles its own dsh runtime, and its profile is always
+> `desktop` (`%DSH_HOME%\profiles\desktop`). Run the command above with
+> `resources\runtime\cli\bin\dsh.cmd` from the install directory (it hands the command to the
+> app's own runtime), or install from the GUI's sidebar **Plugins** page. **Fully quit and reopen
+> the app afterwards** — bundle layers do not hot-reload.
 
 ## Screenshots
 
@@ -77,32 +88,60 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.1.5    # restart dsh 
 
 ## Requirements
 
-- dsh `0.1.5-rc` (0.1.5 changed the slot system to a "declared ledger + `slots.inject`" contract; this plugin has been rewritten for it. 0.1.0-rc.6 and older are no longer supported)
+- dsh `0.2.0-rc` (covers both the desktop app and `dsh web`). This plugin is written against the
+  0.2 contract: slots use the "declared ledger + `slots.inject`" model; session navigation goes
+  through `uiWorkspace.openSession`; session state is read from `useSessionStatus`.
+  **0.1.5-rc and older are no longer supported.**
 - Build & test: Node.js ≥ 22.13 (tests run TypeScript directly) + npm
 - Installing from the repo needs no build: the `lib/` artifacts are committed
 - `npm run smoke` must find the local dsh's `@deepseek-ai/dsh-app-boot`; point at it with an env var if it does not:
   `DSH_APP_BOOT=/path/to/@deepseek-ai/dsh-app-boot/lib/index.js npm run smoke`
 
+### 0.2 migration notes (why older builds must upgrade)
+
+| Change | 0.1.5 | 0.2 |
+|---|---|---|
+| Browser-half runtime package | `@deepseek-ai/dsh-client-runtime` | Removed; split into `dsh-client-modules` / `dsh-client-store` / `dsh-client-ui-renderer` |
+| Current session | `current` field on the `useSessions()` snapshot | Removed; derive it the official way from `byId[*].retainedBy.mainView` |
+| Session navigation | `ctx.sessions.open(id)` | The Session Controller no longer navigates; use `ctx.uiWorkspace.openSession(id)` |
+| Waiting-for-user / unread-done | Global hook `useSessionPendingInteraction` | Removed; use `useSessionStatus` (`SessionStatus = { running, pendingInteraction, completionUnread }`) |
+| Icon components | `IconXxx16` / `IconXxx14` (named by size) | `IconXxxRegular` / `IconXxxMedium` (named by stroke weight; size comes from the `size` prop) |
+| `Modal` | `closeLabel` optional | `closeLabel` **required** (accessible close-button label) |
+| cordis | `^4.0.1` | `~4.0.4` |
+
+> ⚠️ **The official CSS-module class hashes are not stable across builds, so this plugin's footer
+> CSS no longer hardcodes any of them.** The official sidebar class names are CSS Modules hashes
+> whose prefix comes from the **build machine's absolute source path** — so the very same
+> `0.2.0-rc.2` differs between the npm packages and the desktop app's bundled copy
+> (`hHd-Xa_*` / `VOzbGW_*` vs `_2H3hWW_*` / `wCInkW_*`; the CSS itself is byte-identical apart from
+> the hashes). `src/client/settings-compact.ts` therefore uses class-name **substring selectors**
+> such as `[class*="footArea"]`, which match either set, and `test/settings-compact.test.ts` locks
+> in "never write a hash prefix back". Separately, on the Windows desktop the official build has
+> `[data-windows-titlebar] …_collapsed …_footArea{display:none}` (the collapsed column is 0px
+> wide) and this plugin **deliberately does not reclaim** `display` — do not add `!important` there.
+
 ## Install
 
 ```sh
-# From the GitHub source (recommended: pin a release tag)
-dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.1.5
+# Web (dsh web) — from the GitHub source, recommended: pin a release tag
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0
 
-# Or a local tarball (npm pack output)
-dsh plugin --profile web add ./dsh-myagent-0.1.5.tgz
+# Desktop app — install into the `desktop` profile with the app's bundled CLI
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.2.0
 
 # Or a local source directory (development)
 dsh plugin --profile web add ./dsh-myagent
 ```
 
-On success `dsh.profile.bundles` gains a `dsh-myagent` entry automatically. **Restart `dsh web`** for
-the bundle layer to take effect (bundles are not hot-reloaded).
+On success `dsh.profile.bundles` gains a `dsh-myagent` entry automatically. **Restart dsh / fully
+reopen the desktop app** for the bundle layer to take effect (bundles are not hot-reloaded).
 
 Verify:
 
 ```sh
 dsh --profile web --dump-config   # should contain "# == dsh-myagent" and the plugin entry
+# Desktop app:
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" --profile desktop --dump-config
 ```
 
 After the restart you will see `dsh-myagent` under Settings → Plugins, and the sidebar shows the

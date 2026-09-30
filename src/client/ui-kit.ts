@@ -17,6 +17,11 @@
 //   - 卡片 / pill / tab           → 12px；tag → 999px
 //
 // 颜色一律继续走 --dsw-* token（宿主主题注入），本文件不引入任何硬编码色值。
+// 例外：状态点等待态的**柔光环**与问答亮黄（#FACC15）——主题 token 里没有这两档
+// （详见下方 DOT_VISUAL 注释）。
+
+import type { CSSProperties } from "react";
+import type { SessionDotKind } from "./tree-utils.ts";
 
 /** 官方圆角词汇表（数值单位 px；999 = 全圆，用于正圆按钮与胶囊指示条）。 */
 export const RADIUS = {
@@ -68,7 +73,7 @@ export const ICON_BUTTON_STYLE = {
  * 图标按钮的字形尺寸。官方 .tool / .iconButton 的做法是「28px 方框 + CSS 里把 svg 定成
  * 15px」（不靠调用点传 size），本插件沿用同样的接线并再收一档到 14px —— 用户反馈
  * 「按钮图标可以小一点，但是有效点击范围可以大一点。是有点拥挤」。
- * 14 也是官方图标集自带的尺寸档（IconChevronDownOutline14 / IconTriangleRightFill14）。
+ * 14 也是官方图标集自带的尺寸档（IconChevronDownOutlineMedium / IconTriangleRightFillMedium）。
  */
 export const ICON_GLYPH_SIZE = 14;
 
@@ -123,11 +128,97 @@ export const ROW_MIN_HEIGHT = { workspace: 40, group: 36, session: 34 } as const
  */
 export const RAIL_BUTTON_SIZE = 32;
 
+/** 状态点直径（宽态会话行与 rail 任务点同尺寸；16px 图标槽内居中对齐，光环后 12px 仍不挤）。 */
+export const STATUS_DOT_SIZE = 8;
+
 /** rail 里「正在进行」任务的状态点直径（与宽态会话行的状态点同尺寸）。 */
-export const RAIL_DOT_SIZE = 8;
+export const RAIL_DOT_SIZE = STATUS_DOT_SIZE;
 
 /** rail 竖排最多渲染多少个任务点，超出折成「+N」（避免任务多时把 rail 撑得过长）。 */
 export const RAIL_MAX_TASKS = 12;
+
+// ── 会话/任务状态点：一套视觉语言，宽态会话行与 rail 任务点共用 ─────────────────────
+//
+// 语义（优先级见 tree-utils 的 sessionDotKind）：等待用户 > 运行中 > 已完成 > 空白 > 当前 > 空闲。
+// 关键区分（用户报的问题）：**等待用户**与**运行中**必须一眼分得开，而宿主在等审批/等回答时
+// 回合仍在跑（running 依旧 true）——所以等待态在语义上压过运行态，视觉上给三重区分：
+//   ① 颜色：运行 = 蓝（business-primary，deepseek-400/500）；等待 = 琥珀（warn-primary，
+//      amber-500 #f59e0b）或亮黄（#FACC15，主题无纯黄 token，问答专用，与琥珀再分一层）；
+//   ② 动效：运行 = 1.2s 平滑呼吸（ambient，"它在干活"）；等待 = 1.6s **双闪**
+//      （attention，"它在等你"）——节奏不同，余光就能分辨；
+//   ③ 光环：等待态带 2px 同色柔光环（8px 点 + 2px 环 = 12px，仍在 16px 图标槽内），
+//      在一列灰点里主动跳出来。
+//
+// 动效一律走 opacity + box-shadow（不触发布局），并尊重 prefers-reduced-motion。
+/** 状态点的动效档（none = 静态）。 */
+export type DotAnimation = "pulse" | "attention" | "none";
+
+/** 一个状态点的视觉：填充色 / 描边（空白会话用空心点）/ 光环色 / 动效档。 */
+export interface DotVisual {
+  /** 填充色（缺省 = 透明，配合 border 画空心点）。 */
+  color?: string;
+  /** 描边（仅空白新会话用空心点）。 */
+  border?: string;
+  /** 等待态的光环色（写进 --fm-dot-halo，供 CSS box-shadow 使用）。 */
+  halo?: string;
+  animation: DotAnimation;
+}
+
+/**
+ * 状态点视觉表。颜色优先取主题 token（--dsw-alias-state-*），光环是同一色的低透明度
+ * rgba（主题 token 里没有"同色 40% 透明"这一档，写死 rgba 与 #FACC15 同类处理，
+ * 亮/暗主题下都能看清）。
+ */
+export const DOT_VISUAL: Record<SessionDotKind, DotVisual> = {
+  approval: { color: "var(--dsw-alias-state-warn-primary)", halo: "rgba(245, 158, 11, 0.38)", animation: "attention" },
+  "plan-review": { color: "var(--dsw-alias-state-warn-primary)", halo: "rgba(245, 158, 11, 0.38)", animation: "attention" },
+  question: { color: "#FACC15", halo: "rgba(250, 204, 21, 0.38)", animation: "attention" },
+  running: { color: "var(--dsw-alias-state-business-primary)", animation: "pulse" },
+  completed: { color: "var(--dsw-alias-state-success-primary)", animation: "none" },
+  blank: { border: "1px solid var(--dsw-alias-label-tertiary)", animation: "none" },
+  current: { color: "var(--dsw-alias-state-business-primary)", animation: "none" },
+  idle: { color: "var(--dsw-alias-label-tertiary)", animation: "none" },
+};
+
+/** 状态点公共样式（尺寸由调用点定：宽态会话行与 rail 都是 8px）。 */
+export const STATUS_DOT_CSS = `
+.fm-dot{display:block;border-radius:50%;box-sizing:border-box;flex:none}
+/* 运行中：平滑呼吸——"它在干活"。 */
+@keyframes fm-dot-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.fm-dot-pulse{animation:fm-dot-pulse 1.2s ease-in-out infinite}
+/* 等待用户：双闪 + 同色柔光环——"它在等你"。 */
+@keyframes fm-dot-attention{0%,100%{opacity:1}22%{opacity:.25}44%{opacity:1}66%{opacity:.25}}
+.fm-dot-attention{
+  animation:fm-dot-attention 1.6s ease-in-out infinite;
+  box-shadow:0 0 0 2px var(--fm-dot-halo,transparent);
+}
+@media (prefers-reduced-motion: reduce){
+  .fm-dot-pulse,.fm-dot-attention{animation:none}
+}
+`;
+
+/**
+ * 状态点的内联样式：在官方 CSSProperties 之上补一个自定义属性
+ * （等待态柔光环色，CSS 里由 .fm-dot-attention 的 box-shadow 读取）。
+ */
+export interface DotStyle extends CSSProperties {
+  "--fm-dot-halo"?: string;
+}
+
+/**
+ * 组装一个状态点的内联样式 + 类名（宽态会话行 / rail 任务点共用，保证两处不会走样）。
+ * @param kind - 状态点语义。
+ * @param size - 点直径（px）。
+ * @returns 内联 style（含 --fm-dot-halo 自定义属性）与动效类名。
+ */
+export function dotPresentation(kind: SessionDotKind, size: number): { style: DotStyle; className: string } {
+  const visual = DOT_VISUAL[kind];
+  const style: DotStyle = { width: size, height: size };
+  if (visual.color !== undefined) style.background = visual.color;
+  if (visual.border !== undefined) style.border = visual.border;
+  if (visual.halo !== undefined) style["--fm-dot-halo"] = visual.halo;
+  return { style, className: visual.animation === "none" ? "fm-dot" : `fm-dot fm-dot-${visual.animation}` };
+}
 
 /**
  * 官方侧栏滚动条样式（官方 ui-sidebar 把 --dsh-scrollbar-thumb 接到
