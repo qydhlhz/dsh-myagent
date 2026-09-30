@@ -124,18 +124,38 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0    # restart dsh 
 > footer to a different layout.** Once `dsh-client-ui-settings-account` (desktop only) takes
 > `settings.launcher`, the official code stops rendering `settings.trigger` and the seat becomes a
 > **full-width** "avatar + user name" row. Squashing that row into a 32x32 absolutely positioned
-> box makes it overlap the MA mode key (fixed in v0.2.1). Every seat rule is therefore split into
-> two opposite groups by this plugin's **own marker** `data-fm-settings-trigger` (rendered by
+> box makes it overlap the MA mode key (fixed in v0.2.1). As of v0.2.3: the **account row keeps its
+> official geometry** (avatar stays leftmost); it only reserves 44px on its right, and the MA key
+> is taken out of flow and absolutely positioned at that row's right end. Every seat rule is split
+> into two opposite groups by this plugin's **own marker** `data-fm-settings-trigger` (rendered by
 > `IconOnlySettingsTrigger`):
 >
 > | Who owns the seat | Selector | Footer layout |
 > |---|---|---|
 > | this plugin's single-icon trigger (Web / no account plugin) | `[class*="footArea"]:has([data-fm-settings-trigger])` | 32x32 settings key on the left, MA on the same row at the right |
-> | the official account launcher (desktop) | `[class*="footArea"]:not(:has([data-fm-settings-trigger]))` | merged into **one row**, **right-aligned**: `[MA] [avatar name]` |
+> | the official account launcher (desktop) | `[class*="footArea"]:not(:has([data-fm-settings-trigger]))` | account row untouched, MA absolutely positioned at its right end |
 >
-> The discriminator is our **own attribute**, never a guess at an official hash; any other
-> occupant of `settings.launcher` also falls into the second (single right-aligned row) layout.
-> Without `:has()` support neither group applies, falling back to the official layout.
+> The discriminator is our **own attribute**, never a guess at an official hash. Without `:has()`
+> support neither group applies, falling back to the official layout.
+
+## Workspace hierarchy (the native "Workspace Tree")
+
+dsh's native workspace list offers three view modes (by workspace / **workspace tree** / flat list).
+This plugin replaces the whole `sidebar.workspaces` region, and therefore that view option too, so
+it **implements the workspace-tree hierarchy itself** (`src/client/workspace-tree.ts`, mirroring the
+official `folderPath` / `owningParentFolder` verbatim):
+
+- a registered workspace whose directory lies **inside** another registered workspace's directory
+  is nested under its **nearest registered ancestor**;
+- rows are indented 14px per level with a level guide line; rows that have children always show
+  their disclosure triangle;
+- ordering matches the official build: **parent row → the child workspaces' whole subtree → the
+  parent's own sessions**, so expanding a parent cannot push its children out of the viewport;
+- collapsing a parent hides its entire subtree; revealing a workspace from the collapsed rail
+  expands its **ancestor chain** too;
+- deleting a parent re-attaches its children to the next registered ancestor (or makes them roots),
+  because the hierarchy is purely **derived** and writes no data;
+- **when no workspace contains another, rendering is identical to having no hierarchy at all.**
 
 ## Install
 

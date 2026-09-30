@@ -400,8 +400,49 @@ test("左栏组件能真实渲染出工作区 + 区文件树（且未走错误�
   assert.match(html, /D:\/ws/, "文件树应使用 resolveRoot 推出的工作区根");
 });
 
-test("分组标题行有「新对话（当前选中分组）」按钮，且排在「重命名分组」左边", () => {
+test("工作区按原生「工作区树」分级：子级缩进挂在父级下，且排在父级自己的会话之前", () => {
   const ledger = new SlotLedgerStub();
+  ledger.declare("sidebar.workspaces", { kind: "single", scope: "root" });
+  const { ctx } = makeCtx(ledger);
+  loadClientBundle().apply(ctx);
+  const entry = ledger.records.get("sidebar.workspaces")!.entries[0];
+  const injectFace = (entry.options.inject as () => Record<string, unknown>)?.() ?? {};
+
+  // D:/root 是已注册工作区，D:/root/child 是它下面**也注册了**的子工作区。
+  const nestedWorkspaces = {
+    items: [
+      { workspaceId: "w-root", path: "D:/root", title: "root", sessionIds: ["s-root"] },
+      { workspaceId: "w-child", path: "D:/root/child", title: "child", sessionIds: [] },
+    ],
+    archivedSessionIds: [],
+  };
+  const nestedSessions = { byId: { "s-root": { id: "s-root", title: "父级会话", retainedBy: { mainView: 1 } } } };
+  const html = renderToStaticMarkup(
+    React.createElement(entry.component as React.ComponentType<Record<string, unknown>>, {
+      useSessions: (sel: (s: unknown) => unknown) => sel(nestedSessions),
+      useWorkspaces: (sel: (s: unknown) => unknown) => sel(nestedWorkspaces),
+      wide: true,
+      expandSidebar: () => {},
+      ...injectFace,
+    }),
+  );
+
+  assert.match(html, /data-workspace-depth="0"/, "父级应为 0 层");
+  assert.match(html, /data-workspace-depth="1"/, "子工作区应为 1 层");
+  assert.match(html, /fm-wb-ws-parent/, "有子级的行应带 fm-wb-ws-parent（常显折叠三角）");
+  assert.match(html, /aria-level="2"/, "子级行应标 aria-level=2");
+  assert.match(html, /fm-wb-ws-depth/, "子级区段应带层级引导线 class");
+
+  // 官方顺序：「子 Workspace 显示在父级自己的 Session 之前」。
+  const parentRow = html.indexOf('data-workspace-id="w-root"');
+  const childRow = html.indexOf('data-workspace-id="w-child"');
+  const parentSessions = html.indexOf("父级会话");
+  assert.ok(parentRow >= 0 && childRow >= 0 && parentSessions >= 0, "三者都应渲染出来");
+  assert.ok(parentRow < childRow, "父级行应在子工作区之前");
+  assert.ok(childRow < parentSessions, "子工作区应排在父级自己的会话之前（官方同款顺序）");
+});
+
+test("分组标题行有「新对话（当前选中分组）」按钮，且排在「重命名分组」左边", () => {  const ledger = new SlotLedgerStub();
   ledger.declare("sidebar.workspaces", { kind: "single", scope: "root" });
   const { ctx } = makeCtx(ledger);
   loadClientBundle().apply(ctx);

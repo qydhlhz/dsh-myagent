@@ -20,7 +20,7 @@
 //      会话行：状态小圆点（当前会话实心 business 点）。
 // UI polish 轮：rename/delete/archive 用 primitives Modal + Input；行按钮用 primitives Button；
 // 色值全部走 --dsw-* token。
-import React, { useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   Button,
   IconArchiveOutlineMedium,
@@ -39,6 +39,7 @@ import {
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import type { SelectorHook, SessionStatus, SessionStatusHook, SessionStatusSnapshot, SessionsSnapshot, WorkspacesSnapshot } from "./tree-utils.ts";
 import { mainSessionId, sessionDotKind, SESSION_DOT_LABEL, validateNameInput, type SessionDotKind } from "./tree-utils.ts";
+import { ancestorsOf, buildWorkspaceTree } from "./workspace-tree.ts";
 import { setActiveRoot } from "./active-root-store.ts";
 import { ConfirmModal, PromptModal } from "./ContextMenu.tsx";
 import { TopHatIcon } from "./TopHatIcon.tsx";
@@ -140,6 +141,8 @@ export interface WorkspaceBrowserProps {
 
 // 展开态持久化：localStorage 只存 collapsed 的 workspaceId 集合（缺省 = 展开）。
 const COLLAPSED_KEY = "fm.workspace.collapsed";
+/** 工作区树每层的缩进像素（子工作区相对父级右移这么多；靠嵌套累加）。 */
+const WORKSPACE_TREE_INDENT = 14;
 // 分组折叠态持久化：localStorage 使用工作区 + 分组复合 key，避免不同区同名分组互相影响。
 const GROUP_COLLAPSED_KEY = "fm.group.collapsed";
 
@@ -175,6 +178,12 @@ const BROWSER_CSS = `
 .fm-wb-ws-row:hover .fm-wb-ws-folder{display:none}
 .fm-wb-arrow{transition:transform .15s var(--ds-ease-in-out, ease)}
 .fm-wb-arrow-open{transform:rotate(90deg)}
+/* 工作区树：有子级的行**常显**三角（否则折叠入口只能靠 hover 撞见），
+   并且 hover 时保留文件夹图标 —— 那些行同时是"一个区"和"一个可折叠节点"。 */
+.fm-wb-ws-parent .fm-wb-ws-chevron{display:inline-flex}
+.fm-wb-ws-row.fm-wb-ws-parent:hover .fm-wb-ws-folder{display:inline-flex}
+/* 子级区段的层级引导线（marginLeft 由嵌套累加给出，这里只画线并让出一点内容间距）。 */
+.fm-wb-ws-depth{border-left:1px solid var(--dsw-alias-border-l2);padding-left:6px}
 /* ── 方案 B · 导轨树（用户 2026 选定，视觉对照页 .superpowers/brainstorm/workspace-ui）──
    三级不再"只差缩进"，改成分工明确的三档：
      一级 工作区 13px/600/主色   · 二级 分组 12px/600/次色（小节标签）· 三级 会话 13px/400/主色
@@ -298,6 +307,11 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
   // （原：items undefined → workspaces.length 崩；byId undefined → sessions[id] 崩）。
   const workspaces = useWorkspaces((s) => s.items) ?? [];
   const archived = useWorkspaces((s) => s.archivedSessionIds) ?? [];
+  // 工作区树分级（dsh 原生「按工作区树」语义，见 workspace-tree.ts）：纯粹派生出
+  // "谁挂在谁下面" + 子级表；没有任何嵌套时渲染与"不分级"完全一致。
+  const tree = useMemo(() => buildWorkspaceTree(workspaces), [workspaces]);
+  /** 第一条顶层区段：只有它**之后**的顶层区段才画分隔线（子级之间不画）。 */
+  const firstTopLevelIndex = useMemo(() => tree.order.findIndex((r) => r.depth === 0), [tree]);
   const sessions = useSessions((s) => s.byId) ?? {};
   // 当前主视图会话：0.2 起 SessionListState 没有 current，按 mainView
   // 引用来源推导（官方 ui-workspace 同款口径）。选择器返回字符串（身份稳定，
@@ -1420,23 +1434,51 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
     }
   };
 
-  const setCollapsedIds = (next: Set<string>) => {
-    setCollapsed(next);
-    writeCollapsed(next);
+  /**
+   * 折叠集合的唯一写入口，**函数式更新**：`expand` / `collapse` / `expandWithAncestors`
+   * 会被同一批里连续调用（例如「定位到某区」要同时展开它自己和它的祖先链），
+   * 若各自读闭包里的 `collapsed` 再整体覆盖，后一次会吃掉前一次的结果。
+   */
+  const updateCollapsed = (produce: (prev: Set<string>) => Set<string>) => {
+    setCollapsed((prev) => {
+      const next = produce(prev);
+      if (next === prev) return prev;
+      writeCollapsed(next);
+      return next;
+    });
   };
 
   const expand = (workspaceId: string) => {
-    if (!collapsed.has(workspaceId)) return;
-    const next = new Set(collapsed);
-    next.delete(workspaceId);
-    setCollapsedIds(next);
+    updateCollapsed((prev) => {
+      if (!prev.has(workspaceId)) return prev;
+      const next = new Set(prev);
+      next.delete(workspaceId);
+      return next;
+    });
   };
 
   const collapse = (workspaceId: string) => {
-    if (collapsed.has(workspaceId)) return;
-    const next = new Set(collapsed);
-    next.add(workspaceId);
-    setCollapsedIds(next);
+    updateCollapsed((prev) => {
+      if (prev.has(workspaceId)) return prev;
+      const next = new Set(prev);
+      next.add(workspaceId);
+      return next;
+    });
+  };
+
+  /**
+   * 展开某工作区**及其全部祖先**。
+   * 分级之后子工作区可能被祖先的折叠藏住，只展开自己不够
+   * （官方同样会在选中会话时自动展开其所在分组的祖先）。
+   */
+  const expandWithAncestors = (workspaceId: string) => {
+    updateCollapsed((prev) => {
+      const needed = ancestorsOf(workspaceId, tree.parents).filter((id) => prev.has(id));
+      if (needed.length === 0) return prev;
+      const next = new Set(prev);
+      for (const id of needed) next.delete(id);
+      return next;
+    });
   };
 
   // 列表滚动区 ref：收起态点「工作区」区标后需要把目标工作区滚到可见。
@@ -1448,6 +1490,8 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
   React.useEffect(() => {
     const id = props.revealWorkspaceId;
     if (id === null || id === undefined) return;
+    // 祖先折叠会把目标整个藏住 —— 定位前先把祖先链展开。
+    expandWithAncestors(id);
     expand(id);
     const nodes = scrollRef.current?.querySelectorAll("[data-workspace-id]");
     const el = nodes === undefined ? undefined : Array.from(nodes).find((n) => n.getAttribute("data-workspace-id") === id);
@@ -1716,6 +1760,164 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
     );
   };
 
+  /**
+   * 渲染一个工作区区段（行 → 子工作区 → 自己的会话分组），**递归**处理分级。
+   *
+   * 顺序与官方「按工作区树」一致：父级行 → 子工作区整棵子树 → 父级自己的会话。
+   * 折叠父级时整棵子树都不渲染（子级块包在 !isCollapsed 里），因此不需要额外的隐藏判定。
+   *
+   * @param w - 该区段的工作区。
+   * @param depth - 层级（0 = 顶层），决定缩进与 aria-level。
+   * @param isFirstTopLevel - 是否第一条顶层区段（它上面不画分隔线）。
+   */
+  const renderWorkspaceSection = (
+    w: (typeof workspaces)[number],
+    depth: number,
+    isFirstTopLevel: boolean,
+  ): React.ReactNode => {
+          const isCollapsed = collapsed.has(w.workspaceId);
+          const visible = (w.sessionIds ?? []).filter((id) => !archived.includes(id));
+          const wsGroups = groupsForWorkspace(w.workspaceId);
+          const children = tree.childrenOf.get(w.workspaceId) ?? [];
+          const hasChildren = children.length > 0;
+          // 工作区拖拽目标 = 整组（行 + 会话区，与原生 groupSection 作为 drop 目标一致）。
+          const wsMarker = drag?.kind === "workspace" && drag.over?.id === w.workspaceId ? drag.over.half : null;
+          return (
+            <div
+              key={w.workspaceId}
+              role="group"
+              data-workspace-id={w.workspaceId}
+              data-workspace-depth={depth}
+              className={
+                (depth > 0 ? "fm-wb-ws-depth " : "") +
+                (wsMarker === "before" ? "fm-wb-drop-before" : wsMarker === "after" ? "fm-wb-drop-after" : "")
+              }
+              style={{
+                position: "relative",
+                marginBottom: 6,
+                // 层级用 marginLeft 表达：区段真的右移，.fm-wb-ws-depth 的引导线才落在该层
+                // 的 x 上。**每层只加一份**缩进、靠嵌套累加，所以不是 depth * N。
+                marginLeft: depth === 0 ? 0 : WORKSPACE_TREE_INDENT,
+                // 顶层区段之间加灰色分割线；子级之间与子聊天框（会话行）都不加。
+                ...(depth === 0 && !isFirstTopLevel ? { borderTop: "1px solid var(--dsw-alias-border-l2)" } : {}),
+              }}
+              onDragOver={
+                drag?.kind === "workspace"
+                  ? (e) => {
+                      // 子级区段嵌在父级 DOM 里，不拦冒泡的话父级会把放置目标改回自己。
+                      e.stopPropagation();
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
+                      // 同步取 half：setDrag 的 updater 延迟到事件处理结束后才执行，
+                      // 彼时 e.currentTarget 已被 React 清为 null（getBoundingClientRect 崩溃根因）。
+                      const half = rowHalf(e);
+                      setDrag((d) => (d === null || d.kind !== "workspace" ? d : { ...d, over: { id: w.workspaceId, half } }));
+                    }
+                  : undefined
+              }
+              onDrop={
+                drag?.kind === "workspace"
+                  ? (e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      const half = rowHalf(e);
+                      setDrag((d) => (d === null ? d : { ...d, over: { id: w.workspaceId, half } }));
+                      commitDrag({ ...drag, over: { id: w.workspaceId, half } });
+                    }
+                  : undefined
+              }
+            >
+              {/* 工作区行：图标列（Folder，hover 换三角箭头）+ 标题 + hover 操作组。
+                  点击整行折叠/展开；拖拽排序。 */}
+              <div
+                role="treeitem"
+                aria-expanded={!isCollapsed}
+                aria-level={depth + 1}
+                className={`fm-wb-row fm-wb-ws-row${hasChildren ? " fm-wb-ws-parent" : ""}`}
+                draggable
+                title={w.path ?? w.workspaceId}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "6px 8px",
+                  // 行高显式钉住：20px 紧凑按钮撑不到 40px，不钉就会塌掉。
+                  // 必须配 box-sizing:border-box —— min-height 默认只作用于 content box，
+                  // 否则行高会变成 minHeight + 2×padding（实测 52 而不是 40）。
+                  boxSizing: "border-box",
+                  minHeight: ROW_MIN_HEIGHT.workspace,
+                  borderRadius: RADIUS.navRow,
+                  cursor: "pointer",
+                  fontWeight: 600,
+                }}
+                onClick={() => {
+                  // 点"区"标签：原有的展开/收起照旧，**并把文件树切到这个区**。
+                  // 每次点击都切（不只是展开那一下）—— 心智模型就一句"点哪个区，文件树就是哪个区"。
+                  if (typeof w.path === "string" && w.path !== "") setActiveRoot(w.path);
+                  if (isCollapsed) expand(w.workspaceId);
+                  else collapse(w.workspaceId);
+                }}
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", w.workspaceId);
+                  dropCommitted.current = false;
+                  setDrag({ kind: "workspace", id: w.workspaceId, over: null });
+                }}
+                onDragEnd={() => {
+                  if (drag?.kind === "workspace" && drag.id === w.workspaceId) endDrag(drag);
+                }}
+              >
+                {/* 固定宽度图标列：Folder（展开/收起），hover 时被三角箭头替换（原生同款）。 */}
+                <span className="fm-wb-ws-folder" style={{ flex: "none", width: 16, display: "inline-flex", justifyContent: "center", color: "var(--dsw-alias-label-secondary)" }}>
+                  {isCollapsed ? <IconFolderCloseMedium size={16} /> : <IconFolderOpenMedium size={16} />}
+                </span>
+                <span className="fm-wb-ws-chevron" style={{ flex: "none", width: 16, display: "inline-flex", justifyContent: "center", color: "var(--dsw-alias-label-caption)" }}>
+                  <IconTriangleRightFillMedium size={14} className={`fm-wb-arrow${isCollapsed ? "" : " fm-wb-arrow-open"}`} />
+                </span>
+                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{w.title ?? w.path}</span>
+                <span className="fm-wb-row-actions" style={{ display: "inline-flex", gap: ROW_ACTION_GAP, flex: "none" }}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={<IconPlusOutlineMedium size={16} />}
+                    style={ROW_ACTION_BUTTON_STYLE}
+                    title="新建分组"
+                    aria-label="新建分组"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setGroupAction({ kind: "create", workspaceId: w.workspaceId });
+                    }}
+                  />
+                  <Button size="sm" variant="ghost" icon={<IconEditOutlineMedium size={16} />} style={ROW_ACTION_BUTTON_STYLE} title="重命名工作区" aria-label="重命名工作区" onClick={(e) => { e.stopPropagation(); setRenameTarget({ kind: "workspace", id: w.workspaceId, title: w.title ?? w.path, brief: annotationsForWorkspace(w.workspaceId).workspaces[w.workspaceId]?.brief ?? "", workspaceId: w.workspaceId }); }} />
+                  <Button size="sm" variant="ghost" icon={<IconTrashOutlineMedium size={16} />} style={{ ...ROW_ACTION_BUTTON_STYLE, color: "var(--dsw-alias-state-error-primary)" }} title="删除工作区" aria-label="删除工作区" onClick={(e) => { e.stopPropagation(); setConfirmTarget({ kind: "workspace", id: w.workspaceId, title: w.title ?? w.path }); }} />
+                </span>
+              </div>
+              {!isCollapsed ? (
+                <>
+                  {/* 子工作区整棵子树排在父级自己的会话**之前**（官方口径：
+                      "子 Workspace 显示在父级自己的 Session 之前"）—— 否则父级一长串
+                      会话会把子级挤出视口，层级就看不出来了。 */}
+                  {children.map((child) => renderWorkspaceSection(child, depth + 1, false))}
+                  {renderGroupSection({
+                    workspaceId: w.workspaceId,
+                    groupId: DEFAULT_GROUP_ID,
+                    name: wsGroups.defaultGroup.name,
+                    sessions: visibleSessionsForGroup(wsGroups, DEFAULT_GROUP_ID, visible),
+                  })}
+                  {wsGroups.groups.map((g) =>
+                    renderGroupSection({
+                      workspaceId: w.workspaceId,
+                      groupId: g.id,
+                      name: g.name,
+                      sessions: visibleSessionsForGroup(wsGroups, g.id, visible),
+                    }),
+                  )}
+                </>
+              ) : null}
+            </div>
+          );
+        };
+
   return (
     <div style={{ fontSize: FONT_SECONDARY, lineHeight: 1.5, userSelect: "none", color: "var(--dsw-alias-label-primary)", height: "100%", display: "flex", flexDirection: "column" }}>
       <style>{BROWSER_CSS}</style>
@@ -1800,132 +2002,7 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
             分组加载失败：{groupsErrors[workspaces[0].workspaceId]}
           </div>
         ) : null}
-        {workspaces.map((w, i) => {
-          const isCollapsed = collapsed.has(w.workspaceId);
-          const visible = (w.sessionIds ?? []).filter((id) => !archived.includes(id));
-          const wsGroups = groupsForWorkspace(w.workspaceId);
-          // 工作区拖拽目标 = 整组（行 + 会话区，与原生 groupSection 作为 drop 目标一致）。
-          const wsMarker = drag?.kind === "workspace" && drag.over?.id === w.workspaceId ? drag.over.half : null;
-          return (
-            <div
-              key={w.workspaceId}
-              role="group"
-              data-workspace-id={w.workspaceId}
-              style={{
-                position: "relative",
-                marginBottom: 6,
-                // 工作区之间加灰色分割线；子聊天框（会话行）不加。
-                ...(i > 0 ? { borderTop: "1px solid var(--dsw-alias-border-l2)" } : {}),
-              }}
-              className={wsMarker === "before" ? "fm-wb-drop-before" : wsMarker === "after" ? "fm-wb-drop-after" : undefined}
-              onDragOver={
-                drag?.kind === "workspace"
-                  ? (e) => {
-                      e.preventDefault();
-                      e.dataTransfer.dropEffect = "move";
-                      // 同步取 half：setDrag 的 updater 延迟到事件处理结束后才执行，
-                      // 彼时 e.currentTarget 已被 React 清为 null（getBoundingClientRect 崩溃根因）。
-                      const half = rowHalf(e);
-                      setDrag((d) => (d === null || d.kind !== "workspace" ? d : { ...d, over: { id: w.workspaceId, half } }));
-                    }
-                  : undefined
-              }
-              onDrop={
-                drag?.kind === "workspace"
-                  ? (e) => {
-                      e.preventDefault();
-                      const half = rowHalf(e);
-                      setDrag((d) => (d === null ? d : { ...d, over: { id: w.workspaceId, half } }));
-                      commitDrag({ ...drag, over: { id: w.workspaceId, half } });
-                    }
-                  : undefined
-              }
-            >
-              {/* 工作区行：图标列（Folder，hover 换三角箭头）+ 标题 + hover 操作组。
-                  点击整行折叠/展开；拖拽排序。 */}
-              <div
-                role="treeitem"
-                aria-expanded={!isCollapsed}
-                className="fm-wb-row fm-wb-ws-row"
-                draggable
-                title={w.path ?? w.workspaceId}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "6px 8px",
-                  // 行高显式钉住：20px 紧凑按钮撑不到 40px，不钉就会塌掉。
-                  // 必须配 box-sizing:border-box —— min-height 默认只作用于 content box，
-                  // 否则行高会变成 minHeight + 2×padding（实测 52 而不是 40）。
-                  boxSizing: "border-box",
-                  minHeight: ROW_MIN_HEIGHT.workspace,
-                  borderRadius: RADIUS.navRow,
-                  cursor: "pointer",
-                  fontWeight: 600,
-                }}
-                onClick={() => {
-                  // 点"区"标签：原有的展开/收起照旧，**并把文件树切到这个区**。
-                  // 每次点击都切（不只是展开那一下）—— 心智模型就一句"点哪个区，文件树就是哪个区"。
-                  if (typeof w.path === "string" && w.path !== "") setActiveRoot(w.path);
-                  if (isCollapsed) expand(w.workspaceId);
-                  else collapse(w.workspaceId);
-                }}
-                onDragStart={(e) => {
-                  e.dataTransfer.effectAllowed = "move";
-                  e.dataTransfer.setData("text/plain", w.workspaceId);
-                  dropCommitted.current = false;
-                  setDrag({ kind: "workspace", id: w.workspaceId, over: null });
-                }}
-                onDragEnd={() => {
-                  if (drag?.kind === "workspace" && drag.id === w.workspaceId) endDrag(drag);
-                }}
-              >
-                {/* 固定宽度图标列：Folder（展开/收起），hover 时被三角箭头替换（原生同款）。 */}
-                <span className="fm-wb-ws-folder" style={{ flex: "none", width: 16, display: "inline-flex", justifyContent: "center", color: "var(--dsw-alias-label-secondary)" }}>
-                  {isCollapsed ? <IconFolderCloseMedium size={16} /> : <IconFolderOpenMedium size={16} />}
-                </span>
-                <span className="fm-wb-ws-chevron" style={{ flex: "none", width: 16, display: "inline-flex", justifyContent: "center", color: "var(--dsw-alias-label-caption)" }}>
-                  <IconTriangleRightFillMedium size={14} className={`fm-wb-arrow${isCollapsed ? "" : " fm-wb-arrow-open"}`} />
-                </span>
-                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{w.title ?? w.path}</span>
-                <span className="fm-wb-row-actions" style={{ display: "inline-flex", gap: ROW_ACTION_GAP, flex: "none" }}>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    icon={<IconPlusOutlineMedium size={16} />}
-                    style={ROW_ACTION_BUTTON_STYLE}
-                    title="新建分组"
-                    aria-label="新建分组"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setGroupAction({ kind: "create", workspaceId: w.workspaceId });
-                    }}
-                  />
-                  <Button size="sm" variant="ghost" icon={<IconEditOutlineMedium size={16} />} style={ROW_ACTION_BUTTON_STYLE} title="重命名工作区" aria-label="重命名工作区" onClick={(e) => { e.stopPropagation(); setRenameTarget({ kind: "workspace", id: w.workspaceId, title: w.title ?? w.path, brief: annotationsForWorkspace(w.workspaceId).workspaces[w.workspaceId]?.brief ?? "", workspaceId: w.workspaceId }); }} />
-                  <Button size="sm" variant="ghost" icon={<IconTrashOutlineMedium size={16} />} style={{ ...ROW_ACTION_BUTTON_STYLE, color: "var(--dsw-alias-state-error-primary)" }} title="删除工作区" aria-label="删除工作区" onClick={(e) => { e.stopPropagation(); setConfirmTarget({ kind: "workspace", id: w.workspaceId, title: w.title ?? w.path }); }} />
-                </span>
-              </div>
-              {!isCollapsed ? (
-                <>
-                  {renderGroupSection({
-                    workspaceId: w.workspaceId,
-                    groupId: DEFAULT_GROUP_ID,
-                    name: wsGroups.defaultGroup.name,
-                    sessions: visibleSessionsForGroup(wsGroups, DEFAULT_GROUP_ID, visible),
-                  })}
-                  {wsGroups.groups.map((g) =>
-                    renderGroupSection({
-                      workspaceId: w.workspaceId,
-                      groupId: g.id,
-                      name: g.name,
-                      sessions: visibleSessionsForGroup(wsGroups, g.id, visible),
-                    }),
-                  )}
-                </>
-              ) : null}
-            </div>
-          );
-        })}
+        {tree.roots.map((w, rootIndex) => renderWorkspaceSection(w, 0, rootIndex === firstTopLevelIndex))}
           </>
         )}
       </div>

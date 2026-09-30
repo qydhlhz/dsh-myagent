@@ -83,17 +83,28 @@ test("凡是要动设置席位的规则都必须带门，且门的方向要和�
   }
 });
 
-test("账号 launcher 在场时：底栏并成一行、整体右对齐（用户 2026-09 定案）", () => {
-  const footRow = RULES.find((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="footArea"]'));
-  assert.ok(footRow, "应有否定门下的 footArea 规则");
-  assert.ok(footRow.includes("flex-direction:row"), "此时 footArea 应为行方向（两个席位并成一行）");
-  assert.ok(footRow.includes("justify-content:flex-end"), "整组应右对齐");
-  // 官方给两个席位的是 width:100%，在行方向会撑爆，必须收回。
-  const areaRule = RULES.find((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="settingsArea"]{'));
-  assert.ok(areaRule && areaRule.includes("width:auto"), "否定门下 settingsArea 应收回 width:auto");
+test("账号 launcher 在场时：账号行保持官方原样，只把 MA 绝对定位到该行最右（用户 2026-09 定案）", () => {
   const actionsRule = RULES.find((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="footerActions"]{'));
-  assert.ok(actionsRule && actionsRule.includes("width:auto"), "否定门下 footerActions 应收回 width:auto");
+  assert.ok(actionsRule, "应有否定门下的 footerActions 规则");
+  assert.ok(actionsRule.includes("position:absolute"), "MA 应从文档流摘出，才能与账号行同行而不占位");
+  assert.ok(actionsRule.includes("right:0"), "MA 应对齐到最右");
+  assert.ok(actionsRule.includes("translateY(-50%)"), "MA 应在账号行内垂直居中");
   assert.ok(actionsRule.includes("padding-left:0"), "否定门下不应再给模式键留 36px 让位");
+  // 「用户图标原位置不动」：账号席位自己**不得**被改盒模型，只让出右侧给 MA。
+  const areaRule = RULES.find((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="settingsArea"]{'));
+  assert.ok(areaRule, "应有否定门下的 settingsArea 规则");
+  assert.ok(areaRule.includes("padding-right:44px"), "账号行右侧要让出 44px 给 MA");
+  assert.equal(areaRule.includes("width:auto"), false, "账号席位应保持官方 width:100%");
+  assert.equal(areaRule.includes("position:absolute"), false, "账号席位不得被绝对定位");
+  // 也不得再把 footArea 改成行方向（那会把账号行一起推右）
+  const footRule = RULES.find((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="footArea"]{'));
+  assert.equal(footRule, undefined, "否定门下不应再动 footArea 的排布（账号行保持官方位置）");
+  // 账号行内部的 triggerRow 官方几何必须保持不动
+  assert.equal(
+    RULES.some((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="triggerRow"]')),
+    false,
+    "不得修改账号行 triggerRow 的官方几何",
+  );
 });
 
 test("标记确实由 IconOnlySettingsTrigger 渲染（否则两个门的方向都会判错）", () => {

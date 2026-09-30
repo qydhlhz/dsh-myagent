@@ -77,21 +77,16 @@ const CSS = `
 [class*="footArea"]:has([data-fm-settings-trigger]) [class*="settingsArea"] [class*="trigger"]:not([class*="triggerRow"]):hover{background:var(--dsw-alias-bg-layer-1)}
 [class*="footArea"]:has([data-fm-settings-trigger]) [class*="footerActions"]{padding-left:36px;align-items:center}
 
-/* ── 账号 launcher 在场时（桌面端）：底栏合成**一行**，内容整体**右对齐** ────────────
-   判据同样是"标记不在场"——即席位被官方账号插件占用。此时官方把脚部排成两行
-   （footerActions 上、settingsArea 下，两者都 width:100%），用户要的是
-   「MA 图标与用户图标同一行、平行、靠右」。
-   做法：把 footArea 从 flex column 改成 flex row + justify-content:flex-end；
-   DOM 顺序本来就是 footerActions 在前、settingsArea 在后，于是天然得到
-   ⟶ ……… [MA] [头像 用户名]，两个图标相邻且整组贴右边。
-   官方给这两个席位的是 width:100%（在行方向会撑爆），故一并收回 width:auto；
-   账号行的 triggerRow 官方是 width:calc(100% + 4px); margin:4px -2px，也收回。
-   ⚠️ 只改这两个席位自己的盒模型，**不碰**账号控件内部（那是官方 DOM），
-   也不引用任何官方哈希。 */
-[class*="footArea"]:not(:has([data-fm-settings-trigger])){flex-direction:row;align-items:center;justify-content:flex-end;gap:4px}
-[class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="footerActions"]{width:auto;min-width:0;flex:none;padding-left:0;align-items:center;justify-content:flex-end}
-[class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="settingsArea"]{width:auto;min-width:0;flex:0 1 auto;justify-content:flex-end}
-[class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="settingsArea"] [class*="triggerRow"]{width:auto;margin:0;align-items:center}
+/* ── 账号 launcher 在场时（桌面端）：账号行**保持官方原样**，只把 MA 模式键移到它右侧 ──
+   判据同样是"标记不在场"——即席位被官方账号插件占用。
+   用户定案（2026-09）：「只把 MA 图标右对齐，用户图标原位置不动」。
+   所以这里**不碰**账号行自己的盒模型与内部结构：它仍是官方那条整行控件（头像在最左、
+   后面跟用户名），我们只是把它右侧让出 44px 给 MA，再把 MA 从文档流里摘出来、
+   绝对定位到同一行的最右侧并垂直居中。
+   官方给 footerActions/settingsArea 的都是 width:100%，accounts 行的 triggerRow 也仍是
+   官方那套（width:calc(100% + 4px); margin:4px -2px）—— 一律保持不动。 */
+[class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="settingsArea"]{box-sizing:border-box;padding-right:44px}
+[class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="footerActions"]{position:absolute;right:0;top:50%;transform:translateY(-50%);width:auto;min-width:0;padding-left:0;align-items:center}
 
 /* 收起态（web 的 56px 轨道）：MA 键在上、设置键在下，竖直居中。同样只在标记在场时生效。
    ⚠️ 前面挂 html:not([data-windows-titlebar]) 是**必须**的：Windows 桌面端收起时整栏 0 宽，
