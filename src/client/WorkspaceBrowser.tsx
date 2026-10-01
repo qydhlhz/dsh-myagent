@@ -1794,7 +1794,8 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
               }
               style={{
                 position: "relative",
-                marginBottom: 6,
+                // 区段之间的间隔（用户 2026-09：与行高一起做紧凑化，6 → 4）。
+                marginBottom: 4,
                 // 层级用 marginLeft 表达：区段真的右移，.fm-wb-ws-depth 的引导线才落在该层
                 // 的 x 上。**每层只加一份**缩进、靠嵌套累加，所以不是 depth * N。
                 marginLeft: depth === 0 ? 0 : WORKSPACE_TREE_INDENT,

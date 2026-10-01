@@ -116,9 +116,13 @@ export const ROW_ACTION_HIT_INSET = "-6px -1px";
 
 /**
  * 三级行的最小高度。原先行高是被 28px 操作按钮"顺带"撑出来的；换成 20px 紧凑按钮后
- * 必须显式钉住，否则行高会塌成 32/28/26，方案 B 的高度层级（40/36/34）就没了。
+ * 必须显式钉住，否则行高会塌成 32/28/26，高度层级就没了。
+ *
+ * 2026-09 用户定案：「工作区的所有行间隔稍微小一点」—— 三档各收 4px（原 40/36/34）。
+ * 下界是行内 20px 操作按钮 + 上下 padding（6/4/3px），收到 36/32/30 后仍各留 4px 余量，
+ * 不会裁到按钮；三档之间保持 4px 的等差，层级关系不变。
  */
-export const ROW_MIN_HEIGHT = { workspace: 40, group: 36, session: 34 } as const;
+export const ROW_MIN_HEIGHT = { workspace: 36, group: 32, session: 30 } as const;
 
 /**
  * 收起态（rail）按钮：32×32 正圆。
