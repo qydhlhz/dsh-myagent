@@ -138,6 +138,27 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0    # restart dsh 
 > The discriminator is our **own attribute**, never a guess at an official hash. Without `:has()`
 > support neither group applies, falling back to the official layout.
 
+### Final footer layout (v0.2.9)
+
+The footer is compressed to **36px** (down from the official 64px) so the vertical space goes
+to the Workspace and File-tree panels. One row holds `[avatar + user name] … [plugins] [MA]`,
+with **every element strictly vertically centered**.
+
+Three things that are easy to get wrong (the arithmetic is documented in the source comments):
+
+1. **The official "Plugins" entry is relocated into the footer.** It is not rendered by this
+   plugin but by the official `nav.<hash>panelList > button.<hash>panelRow`, a **sibling** of
+   `footArea` — so `:has()` pins the sidebar root that owns both children, and the whole row is
+   absolutely positioned into the footer. The official button **stays in the DOM untouched**,
+   so its click behaviour is unchanged. Bonus: taking it out of flow hands its whole row
+   (~44px) back to the two trees.
+2. **The reserved width must cover every key on the right**, not just MA: the account row's
+   `padding-right` is `MA 24 + gap 4 + plugins 24 + clearance 6 + triggerRow overhang 2 = 60px`.
+   Reserving only MA's 28px makes the user name's **click target and hover background sit under
+   the plugins icon**.
+3. **`footArea`'s 1px top border is excluded from centring**, so the padding must be
+   `5px 0 6px` rather than a symmetric value; otherwise the whole content row shifts down 0.5px.
+
 ## Workspace hierarchy (the native "Workspace Tree")
 
 dsh's native workspace list offers three view modes (by workspace / **workspace tree** / flat list).
