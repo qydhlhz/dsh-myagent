@@ -146,7 +146,14 @@ nav[class*="panelList"] [class*="panelTitle"]{display:none}
    官方给 footerActions/settingsArea 的都是 width:100%，accounts 行的 triggerRow 也仍是
    官方那套（width:calc(100% + 4px); margin:4px -2px）—— 保持不动，只有行高按上面的
    全局规则压到 24px。right:0 是相对 footArea 的 padding box，正好落在底栏右缘。 */
-[class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="settingsArea"]{box-sizing:border-box;padding-right:28px}
+/* 让出的宽度必须覆盖**底栏右侧所有键**，不只是 MA：
+     MA 24 + 间距 4 + 「插件」24 + 间距 6 = 58 → 取 60px。
+   实测漏算的后果（用户 2026-10 报"用户名的实际点击触发区和插件的重合了"）：
+   triggerRow 官方是 width:calc(100% + 4px)、margin 左右 -2px，所以它的右缘 =
+   内容盒右缘 + 2。只让 28px 时内容盒右缘 240 → triggerRow 右缘 242，
+   而「插件」在 216..240 —— 用户名的**点击区与 hover 底色都压在插件图标下面**。
+   让 60px 后：内容盒右缘 208、triggerRow 右缘 210、「插件」左缘 216，留 6px 净空。 */
+[class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="settingsArea"]{box-sizing:border-box;padding-right:60px}
 [class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="footerActions"]{position:absolute;right:0;top:50%;transform:translateY(-50%);width:auto;min-width:0;padding-left:0;align-items:center}
 
 /* 收起态（web 的 56px 轨道）：MA 键在上、设置键在下，竖直居中。同样只在标记在场时生效。

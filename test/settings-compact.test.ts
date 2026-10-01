@@ -101,7 +101,9 @@ test("账号 launcher 在场时：账号行保持官方原样，只把 MA 绝对
   // 「用户图标原位置不动」：账号席位自己**不得**被改盒模型，只让出右侧给 MA。
   const areaRule = RULES.find((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="settingsArea"]{'));
   assert.ok(areaRule, "应有否定门下的 settingsArea 规则");
-  assert.ok(areaRule.includes("padding-right:28px"), "账号行右侧要让出 28px 给 MA（24px 键 + 4px 间距）");
+  // 让出的宽度必须覆盖底栏右侧**所有**键（MA + 「插件」），只算 MA 会让用户名的
+  // 点击区/hover 底色压到「插件」下面 —— 用户 2026-10 报的正是这个重合。
+  assert.ok(areaRule.includes("padding-right:60px"), "账号行右侧要让出 60px（MA 24 + 间距 4 + 插件 24 + 净空 6）");
   assert.equal(areaRule.includes("width:auto"), false, "账号席位应保持官方 width:100%");
   assert.equal(areaRule.includes("position:absolute"), false, "账号席位不得被绝对定位");
   // 也不得再把 footArea 改成行方向（那会把账号行一起推右）
@@ -114,6 +116,34 @@ test("账号 launcher 在场时：账号行保持官方原样，只把 MA 绝对
     assert.equal(/\bwidth:/.test(rule), false, `不得改账号行 triggerRow 的宽度：${rule.slice(0, 90)}`);
     assert.equal(/\bmargin(-left|-right)?:/.test(rule), false, `不得改账号行 triggerRow 的横向 margin：${rule.slice(0, 90)}`);
   }
+});
+
+test("账号行让出的宽度必须覆盖底栏右侧所有键（从 CSS 里取实际键宽算，防漏算）", () => {
+  // 这条测试的由来：v0.2.5 把「插件」搬进底栏后，账号行只让了 MA 的 28px，
+  // 结果用户名的点击区与 hover 底色压在「插件」图标下面（用户 2026-10 报的重合）。
+  // 所以让位宽度不能写死，必须按"右侧所有键的实际宽度 + 间距"来校验。
+  const px = (rule: string, prop: string): number => {
+    const m = rule.match(new RegExp(prop + ":(\\d+(?:\\.\\d+)?)px"));
+    assert.ok(m, `规则里应有 ${prop}：${rule.slice(0, 80)}`);
+    return Number(m![1]);
+  };
+  const maRule = RULES.find((r) => r.includes('[class*="footerActions"] .fm-mk-btn'))!;
+  const pluginRule = RULES.find((r) => r.startsWith('nav[class*="panelList"] [class*="panelRow"]'))!;
+  const areaRule = RULES.find((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="settingsArea"]{'))!;
+
+  const maWidth = px(maRule, "width");
+  const pluginWidth = px(pluginRule, "width");
+  const reserved = px(areaRule, "padding-right");
+  // triggerRow 官方是 width:calc(100% + 4px) + 左右 margin -2px → 右缘比内容盒右缘多 2px
+  const TRIGGER_OVERHANG = 2;
+  const MIN_CLEARANCE = 4; // 用户名区域与「插件」之间至少要有的净空
+
+  const needed = maWidth + pluginWidth + MIN_CLEARANCE + TRIGGER_OVERHANG;
+  assert.ok(
+    reserved >= needed,
+    `让位 ${reserved}px 不够：右侧有 MA(${maWidth}) + 插件(${pluginWidth})，` +
+      `还要算上 triggerRow 右侧外溢 ${TRIGGER_OVERHANG}px 与净空 ${MIN_CLEARANCE}px = ${needed}px`,
+  );
 });
 
 test("底栏整体压缩：行高压到 24px（头像下限），且只收纵向留白不动横向几何", () => {
