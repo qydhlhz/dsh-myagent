@@ -146,7 +146,8 @@ test("官方「插件」入口被搬进底栏（绝对定位，不改官方行�
   const navRule = RULES.find((r) => r.startsWith('nav[class*="panelList"]{'));
   assert.ok(navRule, "应有 panelList 的搬移规则");
   assert.ok(navRule.includes("position:absolute"), "panelList 必须脱离文档流（顺带把它让出的整行还给 regionArea）");
-  assert.ok(/right:\d+px/.test(navRule) && /bottom:\d+px/.test(navRule), "应按右/下边偏移定位，侧栏拖宽拖窄都不错位");
+  // 允许小数：为了让「插件」与 MA 在同一像素行上，bottom 落在 9.5px（底栏内容盒从 x.5 起）。
+  assert.ok(/right:\d+(\.\d+)?px/.test(navRule) && /bottom:\d+(\.\d+)?px/.test(navRule), "应按右/下边偏移定位，侧栏拖宽拖窄都不错位");
   assert.ok(navRule.includes("z-index:2"), "要压在底栏之上才点得到");
   const rowRule = RULES.find((r) => r.startsWith('nav[class*="panelList"] [class*="panelRow"]'));
   assert.ok(rowRule && rowRule.includes("width:24px;height:24px"), "「插件」按钮应与底栏 MA 同尺寸（24x24）");
