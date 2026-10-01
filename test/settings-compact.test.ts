@@ -96,7 +96,11 @@ test("账号 launcher 在场时：账号行保持官方原样，只把 MA 绝对
   assert.ok(actionsRule, "应有否定门下的 footerActions 规则");
   assert.ok(actionsRule.includes("position:absolute"), "MA 应从文档流摘出，才能与账号行同行而不占位");
   assert.ok(actionsRule.includes("right:0"), "MA 应对齐到最右");
-  assert.ok(actionsRule.includes("translateY(-50%)"), "MA 应在账号行内垂直居中");
+  // 垂直定位用 bottom 而不是 top:50%+translateY(-50%)：底栏有 1px 上边框，padding box 的
+  // 50% 落在 876.5 而内容行中心是 876 —— 实测 MA 因此比其余三个键低 0.5px（用户报的
+  // "三个图标没有纵向居中"）。bottom 直接对齐内容行下缘，不受上边框影响。
+  assert.ok(actionsRule.includes("bottom:6px"), "MA 应与内容行同高（用 bottom 对齐，不受 1px 上边框影响）");
+  assert.equal(actionsRule.includes("translateY(-50%)"), false, "不得再用 top:50%+translateY（会因上边框偏 0.5px）");
   assert.ok(actionsRule.includes("padding-left:0"), "否定门下不应再给模式键留 36px 让位");
   // 「用户图标原位置不动」：账号席位自己**不得**被改盒模型，只让出右侧给 MA。
   const areaRule = RULES.find((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="settingsArea"]{'));

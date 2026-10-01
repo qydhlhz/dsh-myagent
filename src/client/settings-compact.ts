@@ -60,11 +60,30 @@ const CSS = `
    为此底栏里的 MA 模式键也同步从 32 缩到 24（见下方 footerActions 规则），
    与「插件」入口同尺寸。 */
 /* justify-content:center 是官方本来就有的 flex column（文件头实测）之上补的一条：
-   把席位在底栏里**纵向居中**，这样以后调 padding 也不必再手动配平上下。
-   padding 3.5px（27→32px）后又调到 5.5px（32→36px）：用户两轮反馈"再高 5px"、
-   "再提高一点，现在不太协调" —— 24px 的内容行配 3.5px 留白显得太挤。
-   官方 footArea 的 display:flex;flex-direction:column 保持不变，这里只补居中。 */
-[class*="footArea"]{position:relative;padding:5.5px 0;border-top:1px solid var(--dsw-alias-border-l1);justify-content:center}
+   把席位在底栏里**纵向居中**。
+
+   ⚠️ padding 必须是 5px 上 / 6px 下，**不能对称**。用户 2026-10 报"三个图标没有纵向
+   居中于左下角区"，实测根因就在这：footArea 有 1px 的**上边框**，而边框不参与
+   justify-content 的居中计算 —— 对称 padding（3.5/3.5、5.5/5.5）会让 24px 的内容行
+   整体下移约 0.5px（实测：所有键中心 877，底栏中心 876）。
+   补偿式：要让内容行中心 == 边框盒中心，
+     padding-top = (H − 1 − 24) / 2 − 0.5 = 5（H=36），padding-bottom = H − 1 − 24 − 5 = 6。
+   底栏高度每改一次这条都要重算。 */
+[class*="footArea"]{position:relative;padding:5px 0 6px;border-top:1px solid var(--dsw-alias-border-l1);justify-content:center}
+
+/* 账号行里的 trigger 也必须**落在同一像素行**。实测它比其余三个键高 2px
+   （trigger 863..887；MA / 插件 / settingsArea 都是 865..889），而它的 computed margin 是 0、
+   box-sizing 是 border-box、height 24 —— 位移不来自 margin/height，是官方自带的其他偏移。
+   这里不猜是哪一条，直接把盒模型归零：静态定位、无位移、居中、无纵向外边距。 */
+/* 账号行内部**整条链**都归一。官方结构是 triggerRow > (AccountMenu root) > trigger，
+   而位移不在 trigger 上（它的 margin/height 都正常、align-self 也已是 center），
+   实测整条链仍比其余键高 2px —— 说明偏移写在中间某层。
+   与其继续逐层猜，这里把 triggerRow 及其**全部后代**统一归零：静态定位、无上下位移、
+   无纵向外边距、无 transform、24px 高。!important 是刻意的：官方那层的选择器特异性
+   未知，靠常规优先级打不过它，而这几个属性本来就是我们要强行统一的表现层属性，
+   且账号菜单本体是 portal 到 body 的，不受这里影响。 */
+[class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="settingsArea"] [class*="triggerRow"],
+[class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="settingsArea"] [class*="triggerRow"] *{box-sizing:border-box;height:24px;min-height:0;position:static!important;top:auto!important;bottom:auto!important;margin-top:0!important;margin-bottom:0!important;transform:none!important;align-self:center}
 /* 行高压缩**必须带门**：席位被第三方 launcher 占用时（既不是本插件的单图标 trigger，
    也不是官方账号行）我们一概不碰 —— 那条规则原本就是为了防"压扁别人的控件"而立的，
    这里同样遵守。两个门各写一遍，方向与下面各自的紧凑布局一致。 */
@@ -100,13 +119,13 @@ const CSS = `
    两个定位数值都是**相对 root 的右/下边**算的，因此侧栏拖宽拖窄都不会错位：
      · 底栏 [12, y, 256, 36] → 右缘距 root 右 12px、下缘距 root 下 6px
      · MA 24x24 贴底栏右缘并被纵向居中 → 再往左留 4px 间距放「插件」→ 其右缘距 root 右 40px
-     · 两者垂直居中对齐 → 「插件」下缘距 root 下 11.5px
-       （不是整数：底栏内容盒从 864.5px 起 —— 1px 上边框 + 5.5px padding ——
-        席位行居中后落在 864.5..888.5，所以「插件」的下缘也必须落在 888.5 才对齐。
-        实测写整数会让「插件」比 MA 错开 1px，正是用户要消掉的那种不居中。
-        底栏高度每改一次，这个值必须跟着重算：bottom = 900 −（底栏下缘 − padding − 24）。） */
+     · 两者垂直居中对齐 → 「插件」下缘距 root 下 12px
+       （底栏边框盒 858..894：1px 上边框 + 5px/6px padding → 内容行 864..888，
+        下缘距 root 下 = 900 − 888 = 12。改底栏高度或 padding 就要重算：
+        bottom = root 高度 −（底栏下缘 − padding-bottom − 24）。
+        实测这里差 1px 就会让「插件」与 MA 错开一行。） */
 div:has(> nav[class*="panelList"]):has(> [class*="footArea"]){position:relative}
-nav[class*="panelList"]{position:absolute;right:40px;bottom:11.5px;width:auto;height:auto;margin:0;padding:0;z-index:2}
+nav[class*="panelList"]{position:absolute;right:40px;bottom:12px;width:auto;height:auto;margin:0;padding:0;z-index:2}
 /* min-height:0 必须写：官方 panelRow 带 min-height（36px），只写 height 压不下去
    —— 实测 nav 仍是 24x36，图标因此比 MA 低 6px，两者对不齐。 */
 nav[class*="panelList"] [class*="panelRow"]{box-sizing:border-box;width:24px;height:24px;min-width:0;min-height:0;margin:0;padding:0;gap:0;justify-content:center;border-radius:6px}
@@ -154,7 +173,11 @@ nav[class*="panelList"] [class*="panelTitle"]{display:none}
    而「插件」在 216..240 —— 用户名的**点击区与 hover 底色都压在插件图标下面**。
    让 60px 后：内容盒右缘 208、triggerRow 右缘 210、「插件」左缘 216，留 6px 净空。 */
 [class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="settingsArea"]{box-sizing:border-box;padding-right:60px}
-[class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="footerActions"]{position:absolute;right:0;top:50%;transform:translateY(-50%);width:auto;min-width:0;padding-left:0;align-items:center}
+[class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="footerActions"]{position:absolute;right:0;top:auto;bottom:6px;transform:none;width:auto;min-width:0;padding-left:0;align-items:center}
+/* ↑ 用 bottom:6px 而不是 top:50% + translateY(-50%)：底栏有 1px 上边框，padding box 的
+   50% 落在 876.5，而内容行的中心是 876 —— 实测 MA 因此比其余三个键低 0.5px。
+   底栏 padding-bottom 是 6px，所以 bottom:6px 正好把 MA 的 24px 放回内容行 864..888。
+   改底栏 padding 时这个值要跟着改。 */
 
 /* 收起态（web 的 56px 轨道）：MA 键在上、设置键在下，竖直居中。同样只在标记在场时生效。
    此时整栏只有 56px，「插件」入口搬进底栏会挤成一团 —— 直接隐藏它（面板本身仍可通过
