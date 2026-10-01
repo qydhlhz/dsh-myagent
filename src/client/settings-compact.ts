@@ -61,9 +61,10 @@ const CSS = `
    与「插件」入口同尺寸。 */
 /* justify-content:center 是官方本来就有的 flex column（文件头实测）之上补的一条：
    把席位在底栏里**纵向居中**，这样以后调 padding 也不必再手动配平上下。
-   padding 3.5px 而不是 1px：用户要求这一条再高 5px（27 → 32px）。
+   padding 3.5px（27→32px）后又调到 5.5px（32→36px）：用户两轮反馈"再高 5px"、
+   "再提高一点，现在不太协调" —— 24px 的内容行配 3.5px 留白显得太挤。
    官方 footArea 的 display:flex;flex-direction:column 保持不变，这里只补居中。 */
-[class*="footArea"]{position:relative;padding:3.5px 0;border-top:1px solid var(--dsw-alias-border-l1);justify-content:center}
+[class*="footArea"]{position:relative;padding:5.5px 0;border-top:1px solid var(--dsw-alias-border-l1);justify-content:center}
 /* 行高压缩**必须带门**：席位被第三方 launcher 占用时（既不是本插件的单图标 trigger，
    也不是官方账号行）我们一概不碰 —— 那条规则原本就是为了防"压扁别人的控件"而立的，
    这里同样遵守。两个门各写一遍，方向与下面各自的紧凑布局一致。 */
@@ -97,14 +98,15 @@ const CSS = `
    为什么用 :has() 找 root：root 自己不创建定位上下文，而它的类名哈希跨构建不稳定
    （见文件头说明），只能按"同时拥有 panelList 和 footArea 两个子元素"来精确锁定它。
    两个定位数值都是**相对 root 的右/下边**算的，因此侧栏拖宽拖窄都不会错位：
-     · 底栏 [12, y, 256, 32] → 右缘距 root 右 12px、下缘距 root 下 6px
+     · 底栏 [12, y, 256, 36] → 右缘距 root 右 12px、下缘距 root 下 6px
      · MA 24x24 贴底栏右缘并被纵向居中 → 再往左留 4px 间距放「插件」→ 其右缘距 root 右 40px
-     · 两者垂直居中对齐 → 「插件」下缘距 root 下 9.5px
-       （不是整数：底栏内容盒从 866.5px 起 —— 1px 上边框 + 3.5px padding ——
-        席位行居中后落在 866.5..890.5，所以「插件」的下缘也必须落在 890.5 才对齐。
-        实测写 10px 会让「插件」比 MA 高 1px，正是用户要消掉的那种不居中。） */
+     · 两者垂直居中对齐 → 「插件」下缘距 root 下 11.5px
+       （不是整数：底栏内容盒从 864.5px 起 —— 1px 上边框 + 5.5px padding ——
+        席位行居中后落在 864.5..888.5，所以「插件」的下缘也必须落在 888.5 才对齐。
+        实测写整数会让「插件」比 MA 错开 1px，正是用户要消掉的那种不居中。
+        底栏高度每改一次，这个值必须跟着重算：bottom = 900 −（底栏下缘 − padding − 24）。） */
 div:has(> nav[class*="panelList"]):has(> [class*="footArea"]){position:relative}
-nav[class*="panelList"]{position:absolute;right:40px;bottom:9.5px;width:auto;height:auto;margin:0;padding:0;z-index:2}
+nav[class*="panelList"]{position:absolute;right:40px;bottom:11.5px;width:auto;height:auto;margin:0;padding:0;z-index:2}
 /* min-height:0 必须写：官方 panelRow 带 min-height（36px），只写 height 压不下去
    —— 实测 nav 仍是 24x36，图标因此比 MA 低 6px，两者对不齐。 */
 nav[class*="panelList"] [class*="panelRow"]{box-sizing:border-box;width:24px;height:24px;min-width:0;min-height:0;margin:0;padding:0;gap:0;justify-content:center;border-radius:6px}
