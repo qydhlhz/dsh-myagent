@@ -70,10 +70,18 @@ test("凡是要动设置席位的规则都必须带门，且门的方向要和�
   //   · 否定门 :not(:has(...))  → 席位被官方账号 launcher 占用（桌面端）→ 并成一行右对齐
   // 关键点：否定门里也含有 ":has([data-fm-settings-trigger])" 这个**子串**，所以只查
   // includes(GATE) 会被它蒙混过关 —— 必须显式区分两种方向。
-  const seatRules = RULES.filter(
-    (r) => /\[class\*="(settingsArea|triggerRow|footerActions)"\]/.test(r) ||
-           /\[class\*="trigger"\]:not/.test(r),
-  );
+  // 判定"这条规则动的是不是席位"，要看**选择器的主语**（最后一个复合选择器），
+  // 而不是整条文本里出现过什么 —— 否则 `... [class*="footerActions"] .fm-mk-btn`
+  // 这种"以我们自己的按钮为主语"的规则会被误判成席位规则。
+  const subjectOf = (rule: string): string =>
+    rule
+      .slice(0, rule.indexOf("{"))
+      .split(",")
+      .map((sel) => sel.trim().split(/\s+/).pop() ?? "")
+      .join(" ");
+  const isSeatSubject = (s: string): boolean =>
+    /\[class\*="(settingsArea|triggerRow|footerActions)"\]/.test(s) || /\[class\*="trigger"\]:not/.test(s);
+  const seatRules = RULES.filter((r) => isSeatSubject(subjectOf(r)));
   assert.ok(seatRules.length >= 8, `应有多条席位规则，实际 ${seatRules.length}`);
   for (const rule of seatRules) {
     const positive = rule.includes(GATE) && !rule.includes(NEGATIVE_GATE);
@@ -93,17 +101,61 @@ test("账号 launcher 在场时：账号行保持官方原样，只把 MA 绝对
   // 「用户图标原位置不动」：账号席位自己**不得**被改盒模型，只让出右侧给 MA。
   const areaRule = RULES.find((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="settingsArea"]{'));
   assert.ok(areaRule, "应有否定门下的 settingsArea 规则");
-  assert.ok(areaRule.includes("padding-right:44px"), "账号行右侧要让出 44px 给 MA");
+  assert.ok(areaRule.includes("padding-right:28px"), "账号行右侧要让出 28px 给 MA（24px 键 + 4px 间距）");
   assert.equal(areaRule.includes("width:auto"), false, "账号席位应保持官方 width:100%");
   assert.equal(areaRule.includes("position:absolute"), false, "账号席位不得被绝对定位");
   // 也不得再把 footArea 改成行方向（那会把账号行一起推右）
   const footRule = RULES.find((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="footArea"]{'));
   assert.equal(footRule, undefined, "否定门下不应再动 footArea 的排布（账号行保持官方位置）");
-  // 账号行内部的 triggerRow 官方几何必须保持不动
+  // 账号行 triggerRow：**纵向**高度/留白按底栏压缩统一收掉（见下一条测试），但横向官方
+  // 几何（width / 左右 margin）一律不得被带门的规则覆盖 —— 那才是"保持原样"的实质。
+  const gatedRowRules = RULES.filter((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="triggerRow"]'));
+  for (const rule of gatedRowRules) {
+    assert.equal(/\bwidth:/.test(rule), false, `不得改账号行 triggerRow 的宽度：${rule.slice(0, 90)}`);
+    assert.equal(/\bmargin(-left|-right)?:/.test(rule), false, `不得改账号行 triggerRow 的横向 margin：${rule.slice(0, 90)}`);
+  }
+});
+
+test("底栏整体压缩：行高压到 24px（头像下限），且只收纵向留白不动横向几何", () => {
+  const heightRules = RULES.filter((r) => r.includes("height:24px"));
+  assert.ok(
+    heightRules.some((r) => r.includes(GATE) && r.includes('[class*="settingsArea"]')),
+    "肯定门下的 settingsArea 行高应压到 24px",
+  );
+  assert.ok(
+    heightRules.some((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="settingsArea"]')),
+    "否定门下的 settingsArea 行高应压到 24px",
+  );
   assert.equal(
-    RULES.some((r) => r.includes(NEGATIVE_GATE) && r.includes('[class*="triggerRow"]')),
+    heightRules.some((r) => r.includes('[class*="settingsArea"]') && !r.includes(":has(")),
     false,
-    "不得修改账号行 triggerRow 的官方几何",
+    "行高压缩不得出现无门的席位规则（会压扁第三方 launcher 的控件）",
+  );
+  assert.ok(
+    RULES.some((r) => r.includes("margin-top:0") && r.includes('[class*="triggerRow"]')),
+    "只收纵向 margin-top/bottom，横向保持官方",
+  );
+  const maRule = RULES.find((r) => r.includes('[class*="footerActions"] .fm-mk-btn'));
+  assert.ok(maRule && maRule.includes("width:24px;height:24px"), "底栏 MA 键应缩到 24x24，与「插件」入口同尺寸");
+});
+
+test("官方「插件」入口被搬进底栏（绝对定位，不改官方行为）", () => {
+  const ctxRule = RULES.find((r) => r.includes(':has(> nav[class*="panelList"])'));
+  assert.ok(ctxRule, "应把同时含 panelList 与 footArea 的 root 变成定位上下文");
+  assert.ok(ctxRule.includes("position:relative"), "root 需为 relative 才能给 panelList 定位");
+  const navRule = RULES.find((r) => r.startsWith('nav[class*="panelList"]{'));
+  assert.ok(navRule, "应有 panelList 的搬移规则");
+  assert.ok(navRule.includes("position:absolute"), "panelList 必须脱离文档流（顺带把它让出的整行还给 regionArea）");
+  assert.ok(/right:\d+px/.test(navRule) && /bottom:\d+px/.test(navRule), "应按右/下边偏移定位，侧栏拖宽拖窄都不错位");
+  assert.ok(navRule.includes("z-index:2"), "要压在底栏之上才点得到");
+  const rowRule = RULES.find((r) => r.startsWith('nav[class*="panelList"] [class*="panelRow"]'));
+  assert.ok(rowRule && rowRule.includes("width:24px;height:24px"), "「插件」按钮应与底栏 MA 同尺寸（24x24）");
+  const titleRule = RULES.find((r) => r.startsWith('nav[class*="panelList"] [class*="panelTitle"]'));
+  assert.ok(titleRule && titleRule.includes("display:none"), "只留图标，文字标题隐藏（否则放不进底栏）");
+  // 收起轨道里隐藏它 —— 56px 的轨道塞不下第三个键
+  assert.ok(
+    RULES.some((r) => r.includes('[class*="collapsed"]') && r.startsWith('html:not([data-windows-titlebar])') && r.includes('nav[class*="panelList"]') && r.includes("display:none")),
+    "收起态轨道里应隐藏「插件」入口",
   );
 });
 
@@ -116,7 +168,7 @@ test("设置键本体被收敛到 32x32（并收回官方 triggerRow 的 +4px �
     RULES.some((r) => r.includes(GATE) && /\[class\*="triggerRow"\]\{width:100%;margin:0/.test(r)),
     "应收回 triggerRow 的 width:calc(100% + 4px)",
   );
-  assert.ok(RULES.some((r) => r.includes(GATE) && /width:32px;height:32px/.test(r)), "设置键应为 32x32");
+  assert.ok(RULES.some((r) => r.includes(GATE) && /width:24px;height:24px/.test(r)), "设置键应为 24x24（与底栏其余键同尺寸）");
   assert.ok(RULES.some((r) => r.includes(GATE) && r.includes("flex:none")), "应清掉官方 trigger 的 flex:1，否则会被撑到 36px");
 });
 
