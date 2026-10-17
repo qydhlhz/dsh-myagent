@@ -55,6 +55,12 @@ export function cleanLine(text: string, max: number): string {
   let t = String(text ?? "")
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`([^`]*)`/g, "$1")
+    // 粗体/斜体标记：实测独立 API 会写出 `**dsh-myagent 简介**` 这种标题，
+    // 星号留在标题里很难看，清洗阶段直接去掉（**加粗** → 加粗）。
+    .replace(/\*\*([^*]*)\*\*/g, "$1")
+    .replace(/__([^_]*)__/g, "$1")
+    .replace(/(^|[\s（(])\*([^*\n]+)\*/g, "$1$2")
+    .replace(/^[#>\s]+/, "")
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/https?:\/\/\S+/g, " ")
     .replace(/<[^>]+>/g, " ")

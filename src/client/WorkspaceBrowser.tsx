@@ -1075,21 +1075,35 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
     }
   };
 
-  /** 把一条会话的更新结果落到界面与磁盘（**先简介、后标题**，再记 marker）。 */
-  const applySessionUpdate = (
+  /**
+   * 把一条会话的更新结果落到界面与磁盘（**先简介、后标题**，再记 marker）。
+   *
+   * 改名必须 `await` 并把失败**算进结果**：以前是 `props.renameSession?.(…)` 发了不等，
+   * 抛错只会变成 unhandled rejection —— 于是"标题只在插件侧变了、dsh 侧没变"，
+   * 用户看到的就是"重命名功能坏了"。返回 false 表示宿主侧改名失败。
+   */
+  const applySessionUpdate = async (
     wsId: string,
     u: { sessionId: string; title?: string; brief?: string; marker?: string },
-  ) => {
+  ): Promise<boolean> => {
     // ① 先写简介。
     if (u.brief) updateAnnotations(wsId, (d) => setSessionBrief(d, u.sessionId, undefined, u.brief!));
     // ② 再写标题（宿主给的就是 `主题：进度`）。
+    let renamed = true;
     if (u.title) {
-      props.renameSession?.(u.sessionId, u.title);
       const briefNow = u.brief ?? annotationsForWorkspace(wsId).sessions[u.sessionId]?.brief ?? "";
+      // 先落插件侧标注（即使 dsh 侧改名失败，左栏也还是新名字）。
       updateAnnotations(wsId, (d) => setSessionBrief(d, u.sessionId, u.title!, briefNow));
+      try {
+        await props.renameSession?.(u.sessionId, u.title);
+      } catch (err) {
+        renamed = false;
+        console.warn("[dsh-myagent] dsh 侧改名失败（插件侧标注已更新）", u.sessionId, err);
+      }
     }
     // ③ 记 marker：下次只更新"又聊过"的会话。
     if (u.marker) updateAnnotations(wsId, (d) => setSessionMarker(d, u.sessionId, u.marker!));
+    return renamed;
   };
 
   /**
@@ -1136,6 +1150,8 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
 
       const details: Array<{ sessionId: string; title?: string; brief?: string }> = [];
       const totals = { checked: 0, updated: 0, unchanged: 0, skipped: 0, agent: 0, local: 0 };
+      // 宿主侧改名失败的条数：改不动就要说出来，而不是让标题只变在插件侧。
+      let renameFailed = 0;
       const startedAt = Date.now();
       for (let i = 0; i < targets.length; i += CHUNK) {
         const chunk = targets.slice(i, i + CHUNK);
@@ -1154,7 +1170,8 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
             if (u.marker) updateAnnotations(wsId, (d) => setSessionMarker(d, u.sessionId, u.marker!));
             continue;
           }
-          applySessionUpdate(wsId, u);
+          const renamed = await applySessionUpdate(wsId, u);
+          if (!renamed) renameFailed += 1;
           details.push({ sessionId: u.sessionId, title: u.title, brief: u.brief });
         }
         const s = res.data.summary;
@@ -1173,12 +1190,15 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
         await awaitAnnotationsFlushed();
         await reseedMarkers(sessionToWs, (res.data.updates ?? []).map((u) => u.sessionId));
       }
-      setUpdateSummary({ ...totals, elapsedMs: Date.now() - startedAt });
+      setUpdateSummary({ ...totals, elapsedMs: Date.now() - startedAt, renameFailed });
       // 收尾再补一次 marker（覆盖最后一块的改名写入），然后才刷新状态与工作区。
       await reseedMarkers(sessionToWs, details.map((d) => d.sessionId));
       await reloadGroupsAndAnnotations();
       await refreshOrganizerStatus();
-      console.log("[dsh-myagent] 区管家一键更新完成", totals);
+      if (renameFailed > 0) {
+        setUpdateError(`有 ${renameFailed} 条会话在 dsh 侧改名失败（插件左栏已用新标题）—— 详见控制台警告。`);
+      }
+      console.log("[dsh-myagent] 区管家一键更新完成", { ...totals, renameFailed });
     } catch (e) {
       setUpdateError(`更新失败：${(e as Error)?.message ?? String(e)}`);
     } finally {
@@ -1417,9 +1437,15 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
         }
         // ② 再标题（`主题：进度`）。
         if (data.title) {
-          props.renameSession?.(sessionId, data.title);
+          // 先落插件侧标注，再**等** dsh 侧改名；改名失败要明确告诉用户，
+          // 不能像以前那样"发了不等"（异常变 unhandled rejection，界面上毫无反应）。
           updateAnnotations(workspaceId, (d) => setSessionBrief(d, sessionId, data.title!, data.brief ?? renameTarget.brief ?? ""));
           setRenameTarget((prev) => (prev ? { ...prev, title: data.title! } : prev));
+          try {
+            await props.renameSession?.(sessionId, data.title);
+          } catch (err) {
+            window.alert(`左栏标题已更新，但 dsh 侧改名失败：${(err as Error)?.message ?? String(err)}`);
+          }
         }
         // ③ 记 marker：这次总结覆盖到的会话版本，区管家下次据此判断"有没有新对话"。
         void refreshOrganizerStatus();
@@ -2026,12 +2052,14 @@ export function WorkspaceBrowser(props: WorkspaceBrowserProps) {
             : {})}
           onSubmit={(t) => {
             const target = renameTarget;
-            run(() => {
+            // 箭头必须是 async 且**把 promise 交回给 run()**：否则 renameSession 的拒绝
+            // 逃出 run 的兜底、变成 unhandled rejection —— 手动重命名也会"点了没反应"。
+            run(async () => {
               if (target.kind === "session") {
-                props.renameSession?.(target.id, t);
                 updateAnnotations(target.workspaceId, (d) => setSessionBrief(d, target.id, t, annotationsForWorkspace(target.workspaceId).sessions[target.id]?.brief ?? ""));
+                await props.renameSession?.(target.id, t);
               } else {
-                props.renameWorkspace?.(target.id, t);
+                await props.renameWorkspace?.(target.id, t);
               }
             });
             setRenameTarget(null);

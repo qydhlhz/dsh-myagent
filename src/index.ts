@@ -12,6 +12,7 @@ import {
   readOrganizerUsage,
   requestOrganizerPlan,
   setDefaultModelResolver,
+  setOrganizerApiConfig,
 } from "./organizer-agent.js";
 import { resummarizeSession, summarizeSession } from "./session-summary.js";
 import { resummarizeAllSessions, sessionMarker } from "./resummarize-all.js";
@@ -99,13 +100,20 @@ function apply(ctx: any, config: any) {
   });
   const handlers = createHandlers(service, config.trustedHosts ?? [], allowed);
 
+  // 区管家走**独立 API**（用户定案）：插件行 config.organizerApi.apiKey，或环境变量
+  // `DSH_MYAGENT_ORGANIZER_API_KEY`（建议写在 $DSH_HOME/.env，不进仓库）。
+  // 没配 key 时保留原来的 dsh agent 通道，插件对其他人依旧开箱可用。
+  const usingIndependentApi = setOrganizerApiConfig(config);
+
   // 常驻整理员 agent 需要 provider/model —— 不传的话 dsh-agent-loop 每个 turn 直接抛
   // `agent "…" has no provider/model`，模型调用根本不发生（2026-09-12 找到的真根因）。
   // 用动态 inject 取 `agentDefaultModel`（官方 dsh-api-session-controller 同款用法），
   // **不写进本插件 inject**：该服务若缺席，本插件（含左栏文件树）会整个不激活。
+  // 走独立 API 时不需要默认模型，但仍注册解析器：一旦 API 通道失败降级回 agent 通道，它还得在。
   ctx.inject(["agentDefaultModel"], (scope: any) => {
     setDefaultModelResolver(() => scope.agentDefaultModel.currentSelection());
   });
+  if (usingIndependentApi) console.log("[dsh-myagent] 区管家：独立 API 通道已启用");
 
   // ctx.effect 把注册挂到当前 fiber，fiber dispose 时自动注销（dsh 官方插件同款模式，
   // 见 dsh-client-connection / dsh-client-modules；比 ctx.on("dispose") 更稳）。

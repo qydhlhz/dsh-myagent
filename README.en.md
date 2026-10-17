@@ -1,7 +1,7 @@
 # DSH-MYAGENT (`dsh-myagent`)
 
 [![CI](https://github.com/qydhlhz/dsh-myagent/actions/workflows/ci.yml/badge.svg)](https://github.com/qydhlhz/dsh-myagent/actions/workflows/ci.yml)
-![dsh](https://img.shields.io/badge/dsh-0.2.0--rc-blue)
+![dsh](https://img.shields.io/badge/dsh-0.2.1--rc-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 [简体中文](README.md) | **English**
@@ -16,19 +16,20 @@ official preview** and takes over the left sidebar: it merges the three-level li
 It also ships **Butler**, an agent with no chat window of its own: it reads your
 conversations and maintains your workspace groups, titles and briefs for you.
 
-Version numbers track dsh (this release **v0.2.0** ↔ dsh `0.2.0-rc`, covering both the desktop app
-and `dsh web`); dsh 0.2 tightened the plugin contract, so older plugin builds are
-rejected and **upgrading is required**.
+Version numbers track dsh (this release **v0.3.0** ↔ dsh `0.2.1-rc.2`, covering both the desktop app
+and `dsh web`); dsh 0.2 tightened the plugin contract, and since 0.2.1 the loader also compares the
+plugin's `peerDependencies` against the runtime version — a mismatch makes it **skip the whole
+bundle** at startup, so older builds must be upgraded.
 
 A dual-half bundle (host `lib/index.js` + browser `lib/client.js`) with zero third-party runtime
 dependencies; `lib/` is committed — install and go:
 
 ```sh
 # Web (dsh web)
-dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0    # restart dsh afterwards
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.0    # restart dsh afterwards
 
 # Desktop app (DeepSeek Harness; its profile is named `desktop`)
-"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.2.0
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.0
 ```
 
 > **Desktop install**: the desktop app bundles its own dsh runtime, and its profile is always
@@ -88,14 +89,20 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0    # restart dsh 
 
 ## Requirements
 
-- dsh `0.2.0-rc` (covers both the desktop app and `dsh web`). This plugin is written against the
+- dsh `0.2.1-rc.2` (covers both the desktop app and `dsh web`). This plugin is written against the
   0.2 contract: slots use the "declared ledger + `slots.inject`" model; session navigation goes
   through `uiWorkspace.openSession`; session state is read from `useSessionStatus`.
-  **0.1.5-rc and older are no longer supported.**
+  **0.2.0-rc and older are no longer supported.**
+- Compatibility is declared through `peerDependencies` (all `0.2.1-rc.2` in this release). Since
+  0.2.1, dsh compares every declared dsh-package version against the runtime before loading and
+  skips the whole bundle on a mismatch (`skipping profile bundle "dsh-myagent"` in the CLI) —
+  upgrading dsh therefore requires upgrading this plugin.
 - Build & test: Node.js ≥ 22.13 (tests run TypeScript directly) + npm
 - Installing from the repo needs no build: the `lib/` artifacts are committed
-- `npm run smoke` must find the local dsh's `@deepseek-ai/dsh-app-boot`; point at it with an env var if it does not:
-  `DSH_APP_BOOT=/path/to/@deepseek-ai/dsh-app-boot/lib/index.js npm run smoke`
+- `npm run smoke` must find the local dsh's `@deepseek-ai/dsh-app-boot`; point at it with an env var
+  if it does not (since 0.2.1 `exports` no longer exposes the `lib/index.js` subpath, so the
+  **package directory** is accepted too):
+  `DSH_APP_BOOT=/path/to/node_modules/@deepseek-ai/dsh-app-boot npm run smoke`
 
 ### 0.2 migration notes (why older builds must upgrade)
 
@@ -120,43 +127,50 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0    # restart dsh 
 > `[data-windows-titlebar] …_collapsed …_footArea{display:none}` (the collapsed column is 0px
 > wide) and this plugin **deliberately does not reclaim** `display` — do not add `!important` there.
 >
-> ⚠️ **The desktop's official account plugin occupies `settings.launcher`, which switches the
-> footer to a different layout.** Once `dsh-client-ui-settings-account` (desktop only) takes
-> `settings.launcher`, the official code stops rendering `settings.trigger` and the seat becomes a
-> **full-width** "avatar + user name" row. Squashing that row into a 32x32 absolutely positioned
-> box makes it overlap the MA mode key (fixed in v0.2.1). As of v0.2.3: the **account row keeps its
-> official geometry** (avatar stays leftmost); it only reserves 44px on its right, and the MA key
-> is taken out of flow and absolutely positioned at that row's right end. Every seat rule is split
-> into two opposite groups by this plugin's **own marker** `data-fm-settings-trigger` (rendered by
-> `IconOnlySettingsTrigger`):
+> ⚠️ **The official account plugin occupies `settings.launcher`, which switches the footer to a
+> different layout.** Once `dsh-client-ui-settings-account` (always present on desktop; also
+> observed in `dsh web` when running the 0.2.1 desktop payload) takes `settings.launcher`, the
+> official code stops rendering `settings.trigger` and the seat becomes a **full-width**
+> "avatar + user name" row. Squashing that
+> row into a 32x32 absolutely positioned box makes it overlap the MA mode key (fixed in v0.2.1).
+> As of v0.2.3: the **account row keeps its official geometry** (avatar stays leftmost); it only
+> reserves enough width on its right, and the MA key is taken out of flow and absolutely positioned
+> at that row's right end. Every seat rule is split into two opposite groups by this plugin's
+> **own marker** `data-fm-settings-trigger` (rendered by `IconOnlySettingsTrigger`):
 >
 > | Who owns the seat | Selector | Footer layout |
 > |---|---|---|
-> | this plugin's single-icon trigger (Web / no account plugin) | `[class*="footArea"]:has([data-fm-settings-trigger])` | 32x32 settings key on the left, MA on the same row at the right |
-> | the official account launcher (desktop) | `[class*="footArea"]:not(:has([data-fm-settings-trigger]))` | account row untouched, MA absolutely positioned at its right end |
+> | this plugin's single-icon trigger (no account plugin) | `[class*="footArea"]:has([data-fm-settings-trigger])` | 24x24 settings key on the left, MA on the same row at the right |
+> | the official account launcher (desktop / 0.2.1 web) | `[class*="footArea"]:not(:has([data-fm-settings-trigger]))` | account row untouched, MA absolutely positioned at its right end |
 >
 > The discriminator is our **own attribute**, never a guess at an official hash. Without `:has()`
 > support neither group applies, falling back to the official layout.
 
-### Final footer layout (v0.2.9)
+### Final footer layout (v0.3.0)
 
 The footer is compressed to **36px** (down from the official 64px) so the vertical space goes
-to the Workspace and File-tree panels. One row holds `[avatar + user name] … [plugins] [MA]`,
-with **every element strictly vertically centered**.
+to the Workspace and File-tree panels. One row holds
+`[avatar + user name] … [global panel icons…] [MA]`, with **every element strictly vertically
+centered**.
 
-Three things that are easy to get wrong (the arithmetic is documented in the source comments):
+Four things that are easy to get wrong (the arithmetic is documented in the source comments):
 
-1. **The official "Plugins" entry is relocated into the footer.** It is not rendered by this
-   plugin but by the official `nav.<hash>panelList > button.<hash>panelRow`, a **sibling** of
-   `footArea` — so `:has()` pins the sidebar root that owns both children, and the whole row is
-   absolutely positioned into the footer. The official button **stays in the DOM untouched**,
-   so its click behaviour is unchanged. Bonus: taking it out of flow hands its whole row
+1. **The official global-panel entries are relocated into the footer.** They are not rendered by
+   this plugin but by the official `nav.<hash>panelList > button.<hash>panelRow`, a **sibling** of
+   `footArea` — so `:has()` pins the sidebar root that owns both children, and the whole strip is
+   absolutely positioned into the footer. The official buttons **stay in the DOM untouched**, so
+   their click behaviour is unchanged. Bonus: taking them out of flow hands their whole row
    (~44px) back to the two trees.
-2. **The reserved width must cover every key on the right**, not just MA: the account row's
-   `padding-right` is `MA 24 + gap 4 + plugins 24 + clearance 6 + triggerRow overhang 2 = 60px`.
+2. **Since 0.2.1 there are two global panels** (`Plugins` + `Automation`, the latter from
+   `dsh-client-ui-schedule`). The panel list must be **horizontal** and pinned to 24px high: the
+   official list is a column, so two rows grow to 52px and the first icon floats 28px above the
+   footer, covering the file tree (measured on 0.2.1).
+3. **The reserved width must cover every key on the right**, and it grows with the panel count:
+   `padding-right = 32 + 28N` (N=1 → 60px, N=2 → 88px; each extra icon = 24px + 4px gap).
    Reserving only MA's 28px makes the user name's **click target and hover background sit under
-   the plugins icon**.
-3. **`footArea`'s 1px top border is excluded from centring**, so the padding must be
+   the panel icons**. The rungs are static `nth-child(2..4)` selector steps; add one when the
+   official build adds a panel.
+4. **`footArea`'s 1px top border is excluded from centring**, so the padding must be
    `5px 0 6px` rather than a symmetric value; otherwise the whole content row shifts down 0.5px.
 
 ## Workspace hierarchy (the native "Workspace Tree")
@@ -182,10 +196,10 @@ official `folderPath` / `owningParentFolder` verbatim):
 
 ```sh
 # Web (dsh web) — from the GitHub source, recommended: pin a release tag
-dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.0
 
 # Desktop app — install into the `desktop` profile with the app's bundled CLI
-"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.2.0
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.0
 
 # Or a local source directory (development)
 dsh plugin --profile web add ./dsh-myagent
@@ -204,7 +218,7 @@ dsh --profile web --dump-config   # should contain "# == dsh-myagent" and the pl
 # --dump-config ("profile \"desktop\" is managed exclusively by the Electron application").
 # Use the installer subcommand to check the installed version instead:
 "D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop list
-#   → dsh-myagent@0.2.1
+#   → dsh-myagent@0.3.0
 ```
 
 After the restart you will see `dsh-myagent` under Settings → Plugins, and the sidebar shows the

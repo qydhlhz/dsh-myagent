@@ -140,7 +140,8 @@ test("账号行让出的宽度必须覆盖底栏右侧所有键（从 CSS 里取
   const reserved = px(areaRule, "padding-right");
   // triggerRow 官方是 width:calc(100% + 4px) + 左右 margin -2px → 右缘比内容盒右缘多 2px
   const TRIGGER_OVERHANG = 2;
-  const MIN_CLEARANCE = 4; // 用户名区域与「插件」之间至少要有的净空
+  const MIN_CLEARANCE = 4; // 用户名区域与面板条之间至少要有的净空
+  const PANEL_GAP = 4; // 面板条里图标之间的间距
 
   const needed = maWidth + pluginWidth + MIN_CLEARANCE + TRIGGER_OVERHANG;
   assert.ok(
@@ -148,6 +149,23 @@ test("账号行让出的宽度必须覆盖底栏右侧所有键（从 CSS 里取
     `让位 ${reserved}px 不够：右侧有 MA(${maWidth}) + 插件(${pluginWidth})，` +
       `还要算上 triggerRow 右侧外溢 ${TRIGGER_OVERHANG}px 与净空 ${MIN_CLEARANCE}px = ${needed}px`,
   );
+
+  // dsh 0.2.1 起官方多了一个「自动化任务」入口（dsh-client-ui-schedule）：同一条底栏
+  // 要再放一个 24px 图标，让位必须跟着涨。这一档 0.2.1 实测漏过 —— 面板条横排是对的，
+  // 但账号行只让 60px，用户名点击区仍会压到第二个图标下面。
+  const twoPanelRule = RULES.find((r) =>
+    r.startsWith('div:has(> nav[class*="panelList"] > [class*="panelRow"]:nth-child(2))'),
+  );
+  assert.ok(twoPanelRule, "两个全局面板时应有第二档让位规则");
+  const reserved2 = px(twoPanelRule!, "padding-right");
+  const needed2 = maWidth + pluginWidth * 2 + PANEL_GAP + MIN_CLEARANCE + TRIGGER_OVERHANG;
+  assert.ok(
+    reserved2 >= needed2,
+    `两个面板时让位 ${reserved2}px 不够：MA(${maWidth}) + 2×面板(${pluginWidth}) + 间距(${PANEL_GAP}) ` +
+      `+ 外溢(${TRIGGER_OVERHANG}) + 净空(${MIN_CLEARANCE}) = ${needed2}px`,
+  );
+  // 每多一个面板 = 一个图标宽 + 一个间距；两档必须正好差这么多（防止抄错常量）。
+  assert.equal(reserved2 - reserved, pluginWidth + PANEL_GAP, "N=2 档应比 N=1 档正好多一个图标 + 一个间距");
 });
 
 test("底栏整体压缩：行高压到 24px（头像下限），且只收纵向留白不动横向几何", () => {
@@ -183,6 +201,12 @@ test("官方「插件」入口被搬进底栏（绝对定位，不改官方行�
   // 允许小数：为了让「插件」与 MA 在同一像素行上，bottom 落在 9.5px（底栏内容盒从 x.5 起）。
   assert.ok(/right:\d+(\.\d+)?px/.test(navRule) && /bottom:\d+(\.\d+)?px/.test(navRule), "应按右/下边偏移定位，侧栏拖宽拖窄都不错位");
   assert.ok(navRule.includes("z-index:2"), "要压在底栏之上才点得到");
+  // 0.2.1 起官方多了「自动化任务」入口，panelList 会有两个子项。必须**横排**并把高度
+  // 钉死在 24px：纵排时 nav 会长成 52px，第一个图标悬到底栏上方 28px（0.2.1 实测）。
+  assert.ok(navRule.includes("flex-direction:row"), "面板条必须横排（0.2.1 起可能有两个入口）");
+  assert.equal(navRule.includes("flex-direction:column"), false, "不得沿用官方的纵排");
+  assert.ok(navRule.includes("height:24px"), "面板条高度钉死 24px，不得随行数向上长");
+  assert.ok(navRule.includes("gap:4px"), "图标间距 4px，与让位宽度换算一致");
   const rowRule = RULES.find((r) => r.startsWith('nav[class*="panelList"] [class*="panelRow"]'));
   assert.ok(rowRule && rowRule.includes("width:24px;height:24px"), "「插件」按钮应与底栏 MA 同尺寸（24x24）");
   const titleRule = RULES.find((r) => r.startsWith('nav[class*="panelList"] [class*="panelTitle"]'));
@@ -192,6 +216,44 @@ test("官方「插件」入口被搬进底栏（绝对定位，不改官方行�
     RULES.some((r) => r.includes('[class*="collapsed"]') && r.startsWith('html:not([data-windows-titlebar])') && r.includes('nav[class*="panelList"]') && r.includes("display:none")),
     "收起态轨道里应隐藏「插件」入口",
   );
+});
+
+test("多面板让位阶梯只作用于账号 launcher 分支（否定门挂在主语上）", () => {
+  // 教训：:has() 里不能嵌套 :has()，写成
+  //   div:has(> [class*="footArea"]:not(:has([data-fm-settings-trigger])))
+  // Chrome 会判定**整条规则无效**（不会退化成部分生效），padding 仍是 60px。
+  // 门必须挂在主语 settingsArea 上，且只允许否定门（账号行在场）—— 肯定门分支里
+  // settingsArea 是 24px 绝对定位的盒子，加 88px padding 会把它撑出去。
+  const hasNestedHas = (selector: string): boolean => {
+    for (let i = 0; i < selector.length; i++) {
+      if (!selector.startsWith(":has(", i)) continue;
+      let depth = 0;
+      for (let j = i + 4; j < selector.length; j++) {
+        const ch = selector[j];
+        if (ch === "(") depth++;
+        else if (ch === ")") {
+          depth--;
+          if (depth === 0) break;
+        } else if (selector.startsWith(":has(", j)) return true;
+      }
+    }
+    return false;
+  };
+  const rungs = RULES.filter((r) => r.startsWith('div:has(> nav[class*="panelList"] > [class*="panelRow"]:nth-child('));
+  assert.ok(rungs.length >= 2, `应有多面板档位（至少 N=2、N=3），实际 ${rungs.length}`);
+  for (const rule of rungs) {
+    const selector = rule.slice(0, rule.indexOf("{"));
+    const subject = selector.split(",").map((s) => s.trim().split(/\s+/).pop()).join(" ");
+    assert.ok(
+      /\[class\*="settingsArea"\]:not\(:has\(\[data-fm-settings-trigger\]\)\)/.test(subject),
+      `多面板档位必须把否定门挂在 settingsArea 主语上：${rule.slice(0, 120)}`,
+    );
+    assert.equal(
+      hasNestedHas(selector),
+      false,
+      `不得在 :has() 里嵌套 :has()（Chrome 判整条规则无效）：${rule.slice(0, 120)}`,
+    );
+  }
 });
 
 test("标记确实由 IconOnlySettingsTrigger 渲染（否则两个门的方向都会判错）", () => {

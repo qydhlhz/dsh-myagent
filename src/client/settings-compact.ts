@@ -1,6 +1,6 @@
 // src/client/settings-compact.ts — 官方设置键"变小 + 与模式键并排"（用户 2026-08-15 定案，v4）。
 //
-// 官方结构（0.2.0-rc.2 产物实测；0.1.x 至今未变）：
+// 官方结构（0.2.0 / 0.2.1 产物实测；0.1.x 至今未变）：
 //   .<hash>_footArea (flex column, position:static)
 //     ├─ .<hash>_footerActions        → renderSlot("sidebar.footer.action")  ← 模式键在这行
 //     └─ .<hash>_settingsArea         → renderSlot("sidebar.settings")       ← 官方 SettingsRoot
@@ -31,8 +31,9 @@
 // 2) 官方 0.2 的 settingsArea **没有** position/z-index（不创建层叠上下文），所以旧版
 //    给 overlay 打 `z-index:1200 !important` 的补丁不再必要 —— settingsArea 上显式
 //    `z-index:auto`，从根上保证设置弹窗（portal 到 body 的 fixed 层）不会被困住。
-// 3) **settings.launcher 会整体顶掉 settings.trigger**（桌面端官方账号插件就这么干，且仅在
-//    `"dshDesktop" in globalThis` 时注册）。席位一旦被别人的 launcher 占用，本插件的
+// 3) **settings.launcher 会整体顶掉 settings.trigger**（官方账号插件
+//    dsh-client-ui-settings-account 占用；0.2.1 桌面 payload 的 web profile 实测同样占用，
+//    席位里也是「头像 + 用户名」）。席位一旦被别人的 launcher 占用，本插件的
 //    32×32 紧凑布局必须整体让位，否则会把「头像 + 用户名」整行压扁并与模式键重合 ——
 //    所以下面所有紧凑规则都挂在 `:has([data-fm-settings-trigger])` 这个**本插件自有标记**
 //    之下（见 IconOnlySettingsTrigger.tsx），不做任何官方哈希的猜测。
@@ -101,7 +102,7 @@ const CSS = `
    收起态（轨道）另有更高特异性的 36x36 规则在后，不受影响。 */
 [class*="footArea"] [class*="footerActions"] .fm-mk-btn{width:24px;height:24px}
 
-/* ── 把官方「插件」面板入口搬到底栏、紧挨 MA 左侧（用户 2026-10 定案）─────────
+/* ── 把官方「插件」等全局面板入口搬到底栏、紧挨 MA 左侧（用户 2026-10 定案）─────
    实测结构（0.2.0-rc.2 桌面产物）：
      div.<root>                                ← 侧栏列，280x900
        ├─ div                                  （空占位）
@@ -109,23 +110,33 @@ const CSS = `
        │    └─ button.<hash>panelRow > span.panelGlyph + span.panelTitle
        ├─ div.<hash>regionArea                 ← 工作区 + 区文件树
        └─ div.<hash>footArea                   ← 底栏
-   panelList 与 footArea 是**兄弟**：把 root 变成定位上下文，就能把「插件」这一行
-   绝对定位到底栏那一行里去。官方按钮**原样留在 DOM 里**，因此点它照旧切到插件面板，
+   panelList 与 footArea 是**兄弟**：把 root 变成定位上下文，就能把这一列
+   绝对定位到底栏那一行里去。官方按钮**原样留在 DOM 里**，因此点它照旧切到对应面板，
    行为一点没变 —— 这里只改它画在哪，不接管它的任何逻辑。
    顺带的好处：panelList 脱离文档流后，regionArea 自动吃掉它让出的整行（约 44px）。
+
+   【0.2.1 适配：全局面板从 1 个变成 2 个】
+   0.2.1 起官方新增「自动化任务」入口（dsh-client-ui-schedule，order 10），panelList
+   里就有两行。旧规则只按**一个** 24x24 图标写（height:auto + bottom:12px），两行时
+   nav 会向上长成 52px：底栏那一行只放得下第二个图标，第一个（插件）悬在区文件树
+   上方 28px —— 实测 0.2.1 web 里就是这样（panelList [216,736 24x52]，MA [764..788]）。
+   现在改成**横向一排**：N 个 24px 图标 + 4px 间距，整条右缘仍距 root 右 40px
+   （= MA 24 + 间距 4 + 右侧留白 12），高度钉死 24px，与 MA 同一像素行。
+   0.2.0 只有一个入口时几何与旧版**逐像素一致**（宽 24、右缘 240、底 788/888）。
+   若官方以后再加入口，只需在下面「让位」处补一档 nth-child 规则（见 32+28N）。
 
    为什么用 :has() 找 root：root 自己不创建定位上下文，而它的类名哈希跨构建不稳定
    （见文件头说明），只能按"同时拥有 panelList 和 footArea 两个子元素"来精确锁定它。
    两个定位数值都是**相对 root 的右/下边**算的，因此侧栏拖宽拖窄都不会错位：
      · 底栏 [12, y, 256, 36] → 右缘距 root 右 12px、下缘距 root 下 6px
-     · MA 24x24 贴底栏右缘并被纵向居中 → 再往左留 4px 间距放「插件」→ 其右缘距 root 右 40px
-     · 两者垂直居中对齐 → 「插件」下缘距 root 下 12px
+     · MA 24x24 贴底栏右缘并被纵向居中 → 再往左留 4px 间距放面板条 → 其右缘距 root 右 40px
+     · 两者垂直居中对齐 → 面板条下缘距 root 下 12px
        （底栏边框盒 858..894：1px 上边框 + 5px/6px padding → 内容行 864..888，
         下缘距 root 下 = 900 − 888 = 12。改底栏高度或 padding 就要重算：
         bottom = root 高度 −（底栏下缘 − padding-bottom − 24）。
-        实测这里差 1px 就会让「插件」与 MA 错开一行。） */
+        实测这里差 1px 就会让面板图标与 MA 错开一行。） */
 div:has(> nav[class*="panelList"]):has(> [class*="footArea"]){position:relative}
-nav[class*="panelList"]{position:absolute;right:40px;bottom:12px;width:auto;height:auto;margin:0;padding:0;z-index:2}
+nav[class*="panelList"]{position:absolute;right:40px;bottom:12px;width:auto;height:24px;margin:0;padding:0;z-index:2;display:flex;flex-direction:row;align-items:center;gap:4px}
 /* min-height:0 必须写：官方 panelRow 带 min-height（36px），只写 height 压不下去
    —— 实测 nav 仍是 24x36，图标因此比 MA 低 6px，两者对不齐。 */
 nav[class*="panelList"] [class*="panelRow"]{box-sizing:border-box;width:24px;height:24px;min-width:0;min-height:0;margin:0;padding:0;gap:0;justify-content:center;border-radius:6px}
@@ -156,23 +167,42 @@ nav[class*="panelList"] [class*="panelTitle"]{display:none}
 [class*="footArea"]:has([data-fm-settings-trigger]) [class*="settingsArea"] [class*="trigger"]:not([class*="triggerRow"]):hover{background:var(--dsw-alias-bg-layer-1)}
 [class*="footArea"]:has([data-fm-settings-trigger]) [class*="footerActions"]{padding-left:28px;align-items:center}
 
-/* ── 账号 launcher 在场时（桌面端）：账号行**保持官方原样**，只把 MA 模式键移到它右侧 ──
+/* ── 账号 launcher 在场时（桌面端；0.2.1 桌面 payload 的 web 也实测占用）：账号行
+   **保持官方原样**，只把
+   右端让给底栏右侧的键 ──
    判据同样是"标记不在场"——即席位被官方账号插件占用。
    用户定案（2026-09）：「只把 MA 图标右对齐，用户图标原位置不动」。
    所以这里**不碰**账号行自己的盒模型与内部结构：它仍是官方那条整行控件（头像在最左、
-   后面跟用户名），我们只是把它右侧让出 28px 给 MA，再把 MA 从文档流里摘出来、
+   后面跟用户名），我们只是把它右侧让出来，再把 MA 从文档流里摘出来、
    绝对定位到同一行的最右侧并垂直居中。
    官方给 footerActions/settingsArea 的都是 width:100%，accounts 行的 triggerRow 也仍是
    官方那套（width:calc(100% + 4px); margin:4px -2px）—— 保持不动，只有行高按上面的
    全局规则压到 24px。right:0 是相对 footArea 的 padding box，正好落在底栏右缘。 */
-/* 让出的宽度必须覆盖**底栏右侧所有键**，不只是 MA：
-     MA 24 + 间距 4 + 「插件」24 + 间距 6 = 58 → 取 60px。
+/* 让出的宽度必须覆盖**底栏右侧所有键**。换算式（从 settingsArea 右缘往左量）：
+     · settingsArea 右缘 → 面板条左缘 = 28px + 面板条宽
+       （28 = root 右侧留白 12 + 面板条右偏移 40）
+     · 面板条宽 = 24N + 4(N−1) = 28N − 4
+     · 再加 triggerRow 外溢 2 + 净空 6
+   → padding-right = 36 + (28N − 4) = **32 + 28N**：
+     N=1 → 60（v0.2.8 的旧值，不变）
+     N=2 → 88（0.2.1 新增「自动化任务」，官方 panelList 现在两行）
+     N=3 → 116、N=4 → 144（官方以后再加全局面板时补这一档即可）
    实测漏算的后果（用户 2026-10 报"用户名的实际点击触发区和插件的重合了"）：
    triggerRow 官方是 width:calc(100% + 4px)、margin 左右 -2px，所以它的右缘 =
    内容盒右缘 + 2。只让 28px 时内容盒右缘 240 → triggerRow 右缘 242，
    而「插件」在 216..240 —— 用户名的**点击区与 hover 底色都压在插件图标下面**。
-   让 60px 后：内容盒右缘 208、triggerRow 右缘 210、「插件」左缘 216，留 6px 净空。 */
+   N=1 让 60px 后：内容盒右缘 208、triggerRow 右缘 210、「插件」左缘 216，留 6px 净空；
+   N=2 让 88px 后：面板条在 188..240（插件 188..212、自动化任务 216..240），
+   triggerRow 右缘 268−88+2 = 182 → 留 6px 净空。 */
 [class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="settingsArea"]{box-sizing:border-box;padding-right:60px}
+/* N≥2 时按 panelList 的子项数抬升让位宽度。判据用 nth-child（DOM 顺序固定），
+   不用 :has(nav ...) 数总数 —— CSS 没有 sibling-count 可用。
+   ⚠️ 门必须挂在**主语**上（settingsArea:not(:has(trigger))），不能写成
+   :has(> [class*="footArea"]:not(:has(...))) —— :has() 里嵌套 :has() 是无效选择器
+   （实测 Chrome 直接判定整条规则无效，padding 仍是 60px）。 */
+div:has(> nav[class*="panelList"] > [class*="panelRow"]:nth-child(2)) [class*="settingsArea"]:not(:has([data-fm-settings-trigger])){padding-right:88px}
+div:has(> nav[class*="panelList"] > [class*="panelRow"]:nth-child(3)) [class*="settingsArea"]:not(:has([data-fm-settings-trigger])){padding-right:116px}
+div:has(> nav[class*="panelList"] > [class*="panelRow"]:nth-child(4)) [class*="settingsArea"]:not(:has([data-fm-settings-trigger])){padding-right:144px}
 [class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="footerActions"]{position:absolute;right:0;top:auto;bottom:6px;transform:none;width:auto;min-width:0;padding-left:0;align-items:center}
 /* ↑ 用 bottom:6px 而不是 top:50% + translateY(-50%)：底栏有 1px 上边框，padding box 的
    50% 落在 876.5，而内容行的中心是 876 —— 实测 MA 因此比其余三个键低 0.5px。

@@ -53,6 +53,7 @@ import {
   type WorkspacesSnapshot,
 } from "./tree-utils.ts";
 import { fileAddressFor } from "./file-address.ts";
+import { renameSessionVia } from "./session-rename.ts";
 import { IMAGE_PANZOOM_ID, imagePanZoomDefinition } from "./image-document.ts";
 import { ImagePanZoom } from "./image-panzoom.tsx";
 import { clearActiveRoot, useActiveRoot } from "./active-root-store.ts";
@@ -117,12 +118,12 @@ function buildActions(ctx: any) {
       // 0.2：会话导航归视图所有者（uiWorkspace），sessions 只管目录与引用。
       ctx.uiWorkspace.openSession(sessionId);
     },
-    renameSession: async (sessionId: string, title: string) => {
-      const session = ctx.sessions.binding(sessionId)?.session;
-      if (session === undefined) throw new Error(`unknown session "${sessionId}"`);
-      const result = await session.rename(title);
-      if (!result.ok) throw new Error(result.error.message);
-    },
+    /**
+     * 给任意会话改名（区管家批量命名、重命名弹窗都用它）。
+     * 实现在 session-rename.ts（纯逻辑、可被 Node 测试钉住），这里只做接线。
+     * 调用方**必须 await**：失败要变成看得见的提示，而不是 unhandled rejection。
+     */
+    renameSession: (sessionId: string, title: string) => renameSessionVia(ctx.sessions as any, sessionId, title),
     renameWorkspace: async (workspaceId: string, title: string) => {
       await ctx.workspaces.rename(workspaceId, title);
     },

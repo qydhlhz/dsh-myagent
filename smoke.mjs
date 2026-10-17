@@ -1,11 +1,12 @@
 // smoke.mjs — 验证 bundle 契约与 patch 合成，不启动 dsh。
 // @deepseek-ai/dsh-app-boot 解析顺序：
-//   1. 环境变量 DSH_APP_BOOT（绝对路径或 file: URL）
-//   2. 项目依赖树（node_modules 可解析时）
+//   1. 环境变量 DSH_APP_BOOT（绝对路径：包目录或 lib/index.js 均可）
+//   2. 项目依赖树（node_modules 可解析时；0.2.1 起优先**裸包名**，因为
+//      package.json 的 exports 不再暴露 `./lib/index.js` 子路径）
 //   3. 全局 npm 安装目录常见位置（Windows / macOS / Linux，兼容
 //      @deepseek-ai/dsh 内嵌与直接安装两种布局）
 // 全部失败时报错并给出 DSH_APP_BOOT 设置方法，不再依赖任何机器特定路径。
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -15,9 +16,16 @@ const here = dirname(fileURLToPath(import.meta.url));
 function bootCandidates() {
   const list = [];
   const env = process.env.DSH_APP_BOOT;
-  if (env) list.push(pathToFileURL(resolve(env)).href);
+  if (env) {
+    // 0.2.1 起 exports 只暴露包根：允许把 DSH_APP_BOOT 指向包目录，
+    // 也保留直接指向 lib/index.js 的旧用法。
+    const abs = resolve(env);
+    const entry = existsSync(abs) && statSync(abs).isDirectory() ? join(abs, "lib", "index.js") : abs;
+    list.push(pathToFileURL(entry).href);
+  }
 
-  // 项目 / 依赖树内直接可解析
+  // 项目 / 依赖树内直接可解析（0.2.1：裸包名；旧版：lib/index.js 子路径）
+  list.push("@deepseek-ai/dsh-app-boot");
   list.push("@deepseek-ai/dsh-app-boot/lib/index.js");
 
   // 全局 npm node_modules：dsh 内嵌（…/dsh/node_modules/…）与直接安装两种布局
@@ -52,8 +60,8 @@ async function loadBoot() {
   }
   throw new Error(
     `cannot resolve @deepseek-ai/dsh-app-boot.\n` +
-      `Set DSH_APP_BOOT to the absolute path of dsh-app-boot/lib/index.js, e.g.:\n` +
-      `  DSH_APP_BOOT=.../@deepseek-ai/dsh-app-boot/lib/index.js npm run smoke\n` +
+      `Set DSH_APP_BOOT to the package directory or its lib/index.js, e.g.:\n` +
+      `  DSH_APP_BOOT=.../node_modules/@deepseek-ai/dsh-app-boot npm run smoke\n` +
       `Tried:\n${tried.map((t) => `  - ${t}`).join("\n")}`,
   );
 }

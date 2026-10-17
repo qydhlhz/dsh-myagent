@@ -227,6 +227,11 @@ export interface OrganizerRunSummary {
   agent: number;
   local: number;
   elapsedMs: number;
+  /**
+   * dsh 侧改名失败的条数（插件左栏仍然会用新标题）。
+   * 有值时面板要明确提示 —— 否则用户只会看到"标题没生效"却不知道为什么。
+   */
+  renameFailed?: number;
 }
 
 /**
@@ -258,6 +263,8 @@ export interface OrganizerAgentInfo {
   lastRequestAt: string | null;
   rotations: number;
   contextBudgetTokens: number;
+  /** `api` = 独立 API 直连（无状态、不占 dsh 模型额度）；`agent` = dsh 常驻 agent 会话。 */
+  transport?: "api" | "agent";
   /**
    * 分区建议专用 agent（planner）。管家被拆成两个 agent：命名/简介用 butler（不额外思考，
    * 要快），分区建议用 planner（开推理 —— 用户定案「分区策略也得是模型思考后的」）。

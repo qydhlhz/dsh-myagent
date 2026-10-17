@@ -255,6 +255,14 @@ export function OrganizePanel(props: {
                 <br />
                 模型 {props.updateSummary.agent} 条 / 本地兜底 {props.updateSummary.local} 条 · 耗时{" "}
                 {(props.updateSummary.elapsedMs / 1000).toFixed(1)}s
+                {props.updateSummary.renameFailed ? (
+                  <>
+                    <br />
+                    <span style={{ color: "var(--dsw-alias-state-error-primary)" }}>
+                      dsh 侧改名失败 {props.updateSummary.renameFailed} 条（左栏已改用新标题）
+                    </span>
+                  </>
+                ) : null}
               </>
             }
             details={(props.updateDetails ?? []).map((d) => ({ key: d.sessionId, primary: d.title || "(无标题)", secondary: d.brief }))}
@@ -291,6 +299,7 @@ export function OrganizePanel(props: {
         <div data-myagent-usage>
           <Row label="上下文已用" value={`${n(contextTokens)} tokens${budget > 0 ? `（预算 ${n(budget)}，${pct}%）` : ""}`} />
           <Row label="会话累计" value={`输入 ${n(input)} · 缓存命中 ${n(cache)} · 输出 ${n(output)}`} />
+          <Row label="通道" value={agent?.transport === "api" ? "独立 API 直连（不占 dsh 模型额度）" : "dsh 常驻 agent 会话"} />
           <Row label="模型" value={agent ? `${agent.provider || "-"} / ${agent.model || "-"}` : "解析中…"} />
           <Row label="请求次数" value={`${n(requests)} 次${agent ? `（本次启动 ${n(agent.requests)} 次 · 上下文轮换 ${n(agent.rotations)} 次）` : ""}`} />
           <Row label="上次运行" value={agent?.lastRequestAt ? new Date(agent.lastRequestAt).toLocaleString() : "尚未运行"} />

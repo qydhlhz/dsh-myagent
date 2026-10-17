@@ -7,6 +7,7 @@ import {
   type OrganizerSnapshot,
   type OrganizerWorkspace,
 } from "./client/organizer.ts";
+import { chatCompletion, resolveOrganizerApi, type ApiReply, type OrganizerApiConfig } from "./llm-api.ts";
 
 /**
  * 管家会话的上下文预算。
@@ -45,6 +46,12 @@ interface OrganizerStats {
   /** 累计轮换次数（上下文超预算换过几次会话）。 */
   rotations: number;
   contextBudgetTokens: number;
+  /**
+   * 管家当前走的通道：
+   *  - `api`   = 独立 API 直连（无状态、不建会话，用户定案）
+   *  - `agent` = dsh 的常驻 agent 会话
+   */
+  transport?: "api" | "agent";
 }
 
 /**
@@ -297,6 +304,18 @@ export function organizerInfo(): OrganizerStats & { planner: PlannerInfo } {
  * "尚未启动"，看起来就是"消耗显示不好使"。预热**不发模型请求**，只建会话 + 解析 provider/model。
  */
 export async function prepareOrganizer(ctx: any): Promise<OrganizerStats> {
+  // 独立 API 模式：不需要 dsh agent（无状态直连），面板信息直接用 API 配置与内存用量。
+  const api = organizerApiConfig();
+  if (api) {
+    for (const slot of [butlerSlot, plannerSlot]) {
+      slot.stats.transport = "api";
+      slot.stats.ready = true;
+      slot.stats.provider = "独立 API";
+      slot.stats.model = api.model;
+      slot.stats.sessionId = "(独立 API，无会话)";
+    }
+    return organizerInfo();
+  }
   try {
     await ensureSlot(ctx, butlerSlot);
   } catch (err) {
@@ -322,6 +341,8 @@ export async function readOrganizerUsage(ctx: any): Promise<{
   reasoningTokens: number;
   sessionBytes: number | null;
 } | null> {
+  // 独立 API 模式没有管家会话可读：用量就是内存里那份（来自 API 的 usage）。
+  if (organizerApiConfig()) return null;
   try {
     const persistence = ctx?.sessionPersistence;
     if (!persistence?.open) return null;
@@ -371,6 +392,38 @@ export async function readOrganizerUsage(ctx: any): Promise<{
  * `usage.totalTokens` 在 dsh 里 = input + cacheRead + output，即**这次请求处理的上下文**，
  * 直接当"上下文已用"最直观。
  */
+/** 独立 API 的配置（apply 时由 src/index.ts 注入插件行 config；没配 key 时为 null）。 */
+let configuredApi: OrganizerApiConfig | null = null;
+
+/**
+ * 由 `apply()` 注入并解析独立 API 配置（`config.organizerApi` 或环境变量）。
+ * 返回是否启用（供启动日志/面板显示）。
+ */
+export function setOrganizerApiConfig(config: any): boolean {
+  configuredApi = resolveOrganizerApi(config);
+  if (configuredApi) {
+    console.log(
+      `[dsh-myagent] 管家使用独立 API：${configuredApi.baseUrl} / ${configuredApi.model}（max_tokens=${configuredApi.maxTokens}）`,
+    );
+  }
+  return configuredApi !== null;
+}
+
+function organizerApiConfig(): OrganizerApiConfig | null {
+  return configuredApi;
+}
+
+/** 独立 API 模式下不需要 dsh agent，provider/model 直接用 API 的。 */
+function noteApiReply(slot: AgentSlot, api: OrganizerApiConfig, reply: ApiReply): void {
+  slot.stats.provider = "独立 API";
+  slot.stats.model = reply.model || api.model;
+  slot.stats.transport = "api";
+  slot.stats.ready = true;
+  // API 通道没有"会话上下文累积"这回事：每次都是自包含的单次请求。
+  slot.stats.sessionId = "(独立 API，无会话)";
+  noteUsage(slot, reply.usage);
+}
+
 function noteUsage(slot: AgentSlot, usage: any): void {
   if (!usage || typeof usage !== "object") return;
   const input = Number(usage.inputTokens ?? 0);
@@ -765,6 +818,22 @@ async function askSlot(
   timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<string> {
+  // ① 独立 API 通道（用户定案）：配了 key 就走官方 API 直连 ——
+  //    无状态、不建 agent 会话、不占 dsh 的模型额度，也就不需要管上下文轮换那一套。
+  //    system 用**同一份**角色约定（systemPromptFor）：实测直连时若只发 user，
+  //    模型会无视"只输出 JSON"、回一整段带 `**` 的项目介绍。
+  const api = organizerApiConfig();
+  if (api) {
+    const reply = await chatCompletion(api, prompt, {
+      system: systemPromptFor(slot),
+      json: /只输出 JSON/.test(prompt),
+      signal,
+    });
+    noteApiReply(slot, api, reply);
+    return reply.text.replace(/\s+/g, " ").trim();
+  }
+
+  // ② 回退：dsh 的常驻 agent 通道。
   await ensureSlot(ctx, slot, signal);
   const organizerAgent = slot.agent;
   if (!organizerAgent) throw new Error("organizer agent not ready");

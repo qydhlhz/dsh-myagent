@@ -1,7 +1,7 @@
 # DSH-MYAGENT (`dsh-myagent`)
 
 [![CI](https://github.com/qydhlhz/dsh-myagent/actions/workflows/ci.yml/badge.svg)](https://github.com/qydhlhz/dsh-myagent/actions/workflows/ci.yml)
-![dsh](https://img.shields.io/badge/dsh-0.2.0--rc-blue)
+![dsh](https://img.shields.io/badge/dsh-0.2.1--rc-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 **简体中文** | [English](README.en.md)
@@ -14,17 +14,18 @@ dsh 0.2 起官方内置了文件树与预览。本项目**保留官方预览**�
 MYAGENT 模式 / 标准模式**的按钮，随时还原官方界面。内置 **区管家** —— 一个不显示对话框的
 agent：读取各对话记忆，替你维护工作区分组，标题，简介。
 
-版本号与 dsh 一一对应（本版 **v0.2.0** ↔ dsh `0.2.0-rc`，同时适配桌面端与 `dsh web`）；
-dsh 0.2 收紧了插件契约，旧版插件会被 0.2 拒绝加载，**必须升级**。
+版本号与 dsh 一一对应（本版 **v0.3.0** ↔ dsh `0.2.1-rc.2`，同时适配桌面端与 `dsh web`）；
+dsh 0.2 收紧了插件契约，0.2.1 起还会按插件的 `peerDependencies` 逐条比对运行时版本 ——
+对不上的 bundle 会在启动时被**整个跳过**，旧版插件必须升级。
 
 双半区 bundle（宿主 `lib/index.js` + 浏览器 `lib/client.js`），消费侧零第三方运行时依赖，`lib/` 已提交、装完即用：
 
 ```sh
 # Web（dsh web）
-dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0    # 装完重启 dsh
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.0    # 装完重启 dsh
 
 # 桌面端（DeepSeek Harness 应用，profile 名为 desktop）
-"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.2.0
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.0
 ```
 
 > **桌面端安装**：桌面端自带一份 dsh 运行时，profile 名固定为 `desktop`
@@ -72,6 +73,29 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0    # 装完重启
   （首条=目标、末尾=当前阶段），都走"先简介、后标题"，标题一律 `主题：进度`。
   两个按钮的差别只是入口，结果字段本来就不同。模型不可用时用会话首末发言本地兜底
   （标题退化为 `主题：进行中`，**不编造进度**）。
+- **改名会真正落到 dsh 侧**（会话列表 / 对话头部），且能改**用户从没打开过**的会话：
+  走官方 `sessions.using(id, {source}, r => r.binding.session.rename(title))`
+  （`src/client/session-rename.ts`）。失败会**明确报出来**（面板红字"N 条改名失败"/
+  弹窗提示），不再静默 —— 老写法 `ctx.sessions.binding(...)` 在 dsh 0.2 上会 TypeError，
+  又因为"发了不等"而完全无声，见 `test/session-rename.test.ts` 的回归断言。
+- **区管家可以走独立 API**：配了 key 就**直连** `https://api.deepseek.com`（`src/llm-api.ts`），
+  不建 dsh agent 会话、不占 dsh 的模型额度、与 `agent-default-model` 完全解耦；
+  面板「通道」一行显示 `独立 API 直连`。没配 key 时自动回退到 dsh agent 通道。
+  配置只放**本机**（不进仓库、不进 tarball）：
+  ```yaml
+  # ~/.dsh/profiles/<profile>/cordis.patch.yml
+  - id: myagent
+    name: dsh-myagent
+    config:
+      allowedRoots: []
+      organizerApi:
+        apiKey: sk-...            # 或用环境变量 DSH_MYAGENT_ORGANIZER_API_KEY
+        baseUrl: https://api.deepseek.com
+        model: deepseek-flash
+        maxTokens: 2048           # 推理模型必须 ≥1024，否则额度全烧在思维链上、正文为空
+  ```
+  官方 `deepseek-flash` 是**推理模型**（默认 effort=high），单次 ≈1～4s；额度不够时
+  代码会**自动加倍重试一次**，仍拿不到正文则抛出可读错误（错误信息里**不含 key**）。
 
 - 上下两区独立折叠 + 可拖拽分割线，两区状态各自持久化
 - 标准模式 ↔ MyAgent 模式一键切换键（MA logo）
@@ -82,13 +106,17 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0    # 装完重启
 
 ## 环境要求
 
-- dsh `0.2.0-rc`（桌面端应用与 `dsh web` 都在此列）。本插件按 0.2 契约重写：
+- dsh `0.2.1-rc.2`（桌面端应用与 `dsh web` 都在此列）。本插件按 0.2 契约重写：
   槽位用"声明账本 + `slots.inject`"；会话导航走 `uiWorkspace.openSession`；
-  会话状态统一读 `useSessionStatus`。**0.1.5-rc 及更早不再支持**。
+  会话状态统一读 `useSessionStatus`。**0.2.0-rc 及更早不再支持**。
+- 兼容性由 `package.json` 的 `peerDependencies` 声明（本版全部为 `0.2.1-rc.2`）。
+  0.2.1 起 dsh 会在加载前逐条比对运行时版本，不匹配时直接跳过整个 bundle
+  （CLI 报 `skipping profile bundle "dsh-myagent"`）——升级 dsh 后必须同步升级本插件。
 - 构建与测试：Node.js ≥ 22.13（测试直接运行 TypeScript）+ npm
 - 安装仓库版无需构建：`lib/` 构建产物已提交
-- 冒烟脚本 `npm run smoke` 需要能找到本机 dsh 的 `@deepseek-ai/dsh-app-boot`；找不到时用环境变量指定：
-  `DSH_APP_BOOT=/path/to/@deepseek-ai/dsh-app-boot/lib/index.js npm run smoke`
+- 冒烟脚本 `npm run smoke` 需要能找到本机 dsh 的 `@deepseek-ai/dsh-app-boot`；找不到时用环境变量指定
+  （0.2.1 起 `exports` 不再暴露 `lib/index.js` 子路径，也可以直接指向**包目录**）：
+  `DSH_APP_BOOT=/path/to/node_modules/@deepseek-ai/dsh-app-boot npm run smoke`
 
 ### 0.2 迁移要点（为什么旧版必须升级）
 
@@ -112,39 +140,44 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0    # 装完重启
 > `[data-windows-titlebar] …_collapsed …_footArea{display:none}`（收起时整栏 0 宽），
 > 插件**有意不抢回** `display` —— 别给那条规则加 `!important`。
 >
-> ⚠️ **桌面端官方账号插件会占用 `settings.launcher`，此时底栏走另一套布局。**
-> `dsh-client-ui-settings-account`（仅在桌面端注册）占用 `settings.launcher` 后，官方就
-> 不再渲染 `settings.trigger`，席位里换成「头像 + 用户名」的**整行**控件。若仍按 32×32
-> 绝对定位压扁这一行，就会和 MA 模式键**重合**（v0.2.1 修的问题）。
-> 现在的做法（v0.2.3 用户定案）：**账号行保持官方原样**（头像仍在最左），只把它右侧让出
-> 44px，并把 MA 从文档流摘出来绝对定位到该行最右 —— 即「只把 MA 右对齐，用户图标原位不动」。
+> ⚠️ **官方账号插件会占用 `settings.launcher`，此时底栏走另一套布局。**
+> `dsh-client-ui-settings-account`（桌面端一直在场；0.2.1 桌面 payload 的 `dsh web`
+> 实测也占用）占用 `settings.launcher` 后，官方就不再渲染 `settings.trigger`，席位里换成
+> 「头像 + 用户名」的**整行**控件。若仍按 32×32 绝对定位压扁这一行，就会和 MA 模式键
+> **重合**（v0.2.1 修的问题）。现在的做法（v0.2.3 用户定案）：**账号行保持官方原样**
+> （头像仍在最左），只把它右侧让出足够的宽度，并把 MA 从文档流摘出来绝对定位到该行最右
+> —— 即「只把 MA 右对齐，用户图标原位不动」。
 > 所有席位规则都按**本插件自有标记** `data-fm-settings-trigger`（由
 > `IconOnlySettingsTrigger` 渲染）分成相反的两组：
 >
 > | 席位里是谁 | 选择器 | 底栏布局 |
 > |---|---|---|
-> | 本插件的单图标 trigger（Web / 无账号插件） | `[class*="footArea"]:has([data-fm-settings-trigger])` | 设置键 32×32 靠左，MA 同一行靠右 |
-> | 官方账号 launcher（桌面端） | `[class*="footArea"]:not(:has([data-fm-settings-trigger]))` | 账号行官方原样，MA 绝对定位到该行最右 |
+> | 本插件的单图标 trigger（无账号插件） | `[class*="footArea"]:has([data-fm-settings-trigger])` | 设置键 24×24 靠左，MA 同一行靠右 |
+> | 官方账号 launcher（桌面端 / 0.2.1 web） | `[class*="footArea"]:not(:has([data-fm-settings-trigger]))` | 账号行官方原样，MA 绝对定位到该行最右 |
 >
 > 判据是**本插件自有属性**，不猜任何官方哈希；浏览器不支持 `:has()` 时两组都不生效 →
 > 退回官方布局。
 
-### 底栏最终形态（v0.2.9）
+### 底栏最终形态（v0.3.0）
 
 底栏被压到 **36px**（原官方 64px），把纵向空间尽量留给「工作区」与「区文件树」两棵树；
-一行里横向依次是 `[头像 + 用户名] … [插件图标] [MA]`，**所有元素严格纵向居中**。
+一行里横向依次是 `[头像 + 用户名] … [全局面板图标…] [MA]`，**所有元素严格纵向居中**。
 
-三个容易踩的点，都已在源码注释里留下换算式：
+四个容易踩的点，都已在源码注释里留下换算式：
 
-1. **官方「插件」入口被搬进底栏**。它不是本插件渲染的，而是官方的
+1. **官方全局面板入口被搬进底栏**。它们不是本插件渲染的，而是官方的
    `nav.<hash>panelList > button.<hash>panelRow`，与 `footArea` 是**兄弟节点** ——
    用 `:has()` 精确锁定同时拥有这两个子元素的 sidebar root，把它变成定位上下文，
-   再把整行绝对定位到底栏。官方按钮**原样留在 DOM 里**，点击行为完全不变。
+   再整条绝对定位到底栏。官方按钮**原样留在 DOM 里**，点击行为完全不变。
    顺带好处：它脱离文档流后，让出的整行（约 44px）自动归了两棵树。
-2. **让位宽度必须覆盖底栏右侧所有键**。账号行右侧的 `padding-right` 需按
-   `MA 24 + 间距 4 + 插件 24 + 净空 6 + triggerRow 外溢 2 = 60px` 计算；
-   只按 MA 算（28px）会让用户名的**点击区与 hover 底色压在插件图标下面**。
-3. **`footArea` 的 1px 上边框不参与居中计算**，所以 padding 必须写成
+2. **0.2.1 起官方有两个全局面板**（`插件` + `自动化任务`，后者来自
+   `dsh-client-ui-schedule`）。panelList 必须**横排**并钉死 24px 高：官方本身是纵排，
+   两行时会向上长成 52px，第一个图标悬在底栏上方 28px、压住区文件树（0.2.1 实测）。
+3. **让位宽度必须覆盖底栏右侧所有键**，且随面板数增长：
+   `padding-right = 32 + 28N`（N=1 → 60px，N=2 → 88px；每多一个图标 = 24px + 4px 间距）。
+   只按 MA 算（28px）会让用户名的**点击区与 hover 底色压到面板图标下面**。
+   档位用 `nth-child(2..4)` 的选择器阶梯写死；官方以后再加面板，补一档即可。
+4. **`footArea` 的 1px 上边框不参与居中计算**，所以 padding 必须写成
    `5px 0 6px` 而不是对称值，否则整条内容行会下移 0.5px。
 
 ## 工作区分级（原生「工作区树」）
@@ -166,10 +199,10 @@ dsh 原生的工作区列表有「按工作区 / **按工作区树** / 单列表
 
 ```sh
 # Web（dsh web）—— 在线安装，推荐锁定版本标签
-dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.2.0
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.0
 
 # 桌面端 —— 用应用自带的 CLI 装进 desktop profile
-"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.2.0
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.0
 
 # 或本地源码目录（开发态）
 dsh plugin --profile web add ./dsh-myagent
@@ -187,7 +220,7 @@ dsh --profile web --dump-config          # 应出现 # == dsh-myagent 与插件�
 # "profile \"desktop\" is managed exclusively by the Electron application"）；
 # 改用安装器子命令查已装版本：
 "D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop list
-#   → dsh-myagent@0.2.1
+#   → dsh-myagent@0.3.0
 ```
 
 重启后在 GUI（侧栏**插件**页 / 设置 → 插件列表）可见 `dsh-myagent`，侧栏出现工作区 / 区文件树面板。
