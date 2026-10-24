@@ -16,7 +16,7 @@ official preview** and takes over the left sidebar: it merges the three-level li
 It also ships **Butler**, an agent with no chat window of its own: it reads your
 conversations and maintains your workspace groups, titles and briefs for you.
 
-Version numbers track dsh (this release **v0.3.0** ↔ dsh `0.2.1-rc.2`, covering both the desktop app
+Version numbers track dsh (this release **v0.3.1** ↔ dsh `0.2.1-rc.2` / `0.2.1-rc.3`, covering both the desktop app
 and `dsh web`); dsh 0.2 tightened the plugin contract, and since 0.2.1 the loader also compares the
 plugin's `peerDependencies` against the runtime version — a mismatch makes it **skip the whole
 bundle** at startup, so older builds must be upgraded.
@@ -26,10 +26,10 @@ dependencies; `lib/` is committed — install and go:
 
 ```sh
 # Web (dsh web)
-dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.0    # restart dsh afterwards
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.1    # restart dsh afterwards
 
 # Desktop app (DeepSeek Harness; its profile is named `desktop`)
-"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.0
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.1
 ```
 
 > **Desktop install**: the desktop app bundles its own dsh runtime, and its profile is always
@@ -89,14 +89,17 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.0    # restart dsh 
 
 ## Requirements
 
-- dsh `0.2.1-rc.2` (covers both the desktop app and `dsh web`). This plugin is written against the
-  0.2 contract: slots use the "declared ledger + `slots.inject`" model; session navigation goes
-  through `uiWorkspace.openSession`; session state is read from `useSessionStatus`.
+- dsh `0.2.1-rc.2` / `0.2.1-rc.3` (covers both the desktop app and `dsh web`). This plugin is written
+  against the 0.2 contract: slots use the "declared ledger + `slots.inject`" model; session navigation
+  goes through `uiWorkspace.openSession`; session state is read from `useSessionStatus`.
   **0.2.0-rc and older are no longer supported.**
-- Compatibility is declared through `peerDependencies` (all `0.2.1-rc.2` in this release). Since
-  0.2.1, dsh compares every declared dsh-package version against the runtime before loading and
-  skips the whole bundle on a mismatch (`skipping profile bundle "dsh-myagent"` in the CLI) —
-  upgrading dsh therefore requires upgrading this plugin.
+- Compatibility is declared through `peerDependencies` (this release:
+  `0.2.1-rc.2 || 0.2.1-rc.3`; the client contracts of both runtimes were checked item by item, and
+  devDependencies pin rc.3). Since 0.2.1, dsh compares every declared dsh-package version against the
+  runtime before loading and skips the whole bundle on a mismatch
+  (`skipping profile bundle "dsh-myagent"` in the CLI) — upgrading dsh across a major line therefore
+  requires upgrading this plugin. The `||` range keeps the plugin loading whether you install it
+  before or after clicking the app's update button.
 - Build & test: Node.js ≥ 22.13 (tests run TypeScript directly) + npm
 - Installing from the repo needs no build: the `lib/` artifacts are committed
 - `npm run smoke` must find the local dsh's `@deepseek-ai/dsh-app-boot`; point at it with an env var
@@ -146,14 +149,14 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.0    # restart dsh 
 > The discriminator is our **own attribute**, never a guess at an official hash. Without `:has()`
 > support neither group applies, falling back to the official layout.
 
-### Final footer layout (v0.3.0)
+### Final footer layout (v0.3.1)
 
 The footer is compressed to **36px** (down from the official 64px) so the vertical space goes
 to the Workspace and File-tree panels. One row holds
 `[avatar + user name] … [global panel icons…] [MA]`, with **every element strictly vertically
 centered**.
 
-Four things that are easy to get wrong (the arithmetic is documented in the source comments):
+Six things that are easy to get wrong (the arithmetic is documented in the source comments):
 
 1. **The official global-panel entries are relocated into the footer.** They are not rendered by
    this plugin but by the official `nav.<hash>panelList > button.<hash>panelRow`, a **sibling** of
@@ -165,13 +168,26 @@ Four things that are easy to get wrong (the arithmetic is documented in the sour
    `dsh-client-ui-schedule`). The panel list must be **horizontal** and pinned to 24px high: the
    official list is a column, so two rows grow to 52px and the first icon floats 28px above the
    footer, covering the file tree (measured on 0.2.1).
-3. **The reserved width must cover every key on the right**, and it grows with the panel count:
-   `padding-right = 32 + 28N` (N=1 → 60px, N=2 → 88px; each extra icon = 24px + 4px gap).
-   Reserving only MA's 28px makes the user name's **click target and hover background sit under
-   the panel icons**. The rungs are static `nth-child(2..4)` selector steps; add one when the
+3. **Since rc.3 there are three entries by default**: `dsh-client-ui-entry-customization`
+   registers `sidebar.panellist.actions`, so a **More** menu button is appended to the panel list
+   and wrapped in a Menu anchor `span` (`moreAnchor`) — it is **no longer a direct
+   `panelRow` child**. The reserved-width rungs therefore count **all direct children** of `nav`
+   (`nav > :nth-child(n)`); counting `[class*="panelRow"]` leaves the third rung unmatched,
+   keeps `padding-right` at 88px, and the account row's right edge covers 22px of the Plugins
+   icon (measured on rc.3).
+4. **The reserved width must cover every key on the right**, and it grows with the panel count:
+   `padding-right = 32 + 28N` (N=1 → 60px, N=2 → 88px, N=3 → 116px; each extra icon = 24px + 4px
+   gap). Reserving only MA's 28px makes the user name's **click target and hover background sit
+   under the panel icons**. The rungs are static `nth-child(2..4)` selector steps; add one when the
    official build adds a panel.
-4. **`footArea`'s 1px top border is excluded from centring**, so the padding must be
+5. **`footArea`'s 1px top border is excluded from centring**, so the padding must be
    `5px 0 6px` rather than a symmetric value; otherwise the whole content row shifts down 0.5px.
+6. **The official "Update" pill's tooltip must not be swallowed by the account-row reset rule**
+   (fixed in v0.3.1). The tooltip bubble is a **direct child of `triggerRow`** and is
+   `position: fixed`; if the footer reset rule's `*` turns it into `static`, it becomes a 118px
+   flex item — the account row shrinks from 200 to 74, the user name is clipped to "t…", and the
+   pill jumps 126px left. Hovering then makes both buttons flash. The rule now excludes
+   `[role="tooltip"]` and only restores the line height of its inner text.
 
 ## Workspace hierarchy (the native "Workspace Tree")
 
@@ -196,10 +212,10 @@ official `folderPath` / `owningParentFolder` verbatim):
 
 ```sh
 # Web (dsh web) — from the GitHub source, recommended: pin a release tag
-dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.0
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.1
 
 # Desktop app — install into the `desktop` profile with the app's bundled CLI
-"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.0
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.1
 
 # Or a local source directory (development)
 dsh plugin --profile web add ./dsh-myagent
@@ -218,7 +234,7 @@ dsh --profile web --dump-config   # should contain "# == dsh-myagent" and the pl
 # --dump-config ("profile \"desktop\" is managed exclusively by the Electron application").
 # Use the installer subcommand to check the installed version instead:
 "D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop list
-#   → dsh-myagent@0.3.0
+#   → dsh-myagent@0.3.1
 ```
 
 After the restart you will see `dsh-myagent` under Settings → Plugins, and the sidebar shows the

@@ -14,7 +14,7 @@ dsh 0.2 起官方内置了文件树与预览。本项目**保留官方预览**�
 MYAGENT 模式 / 标准模式**的按钮，随时还原官方界面。内置 **区管家** —— 一个不显示对话框的
 agent：读取各对话记忆，替你维护工作区分组，标题，简介。
 
-版本号与 dsh 一一对应（本版 **v0.3.0** ↔ dsh `0.2.1-rc.2`，同时适配桌面端与 `dsh web`）；
+版本号与 dsh 一一对应（本版 **v0.3.1** ↔ dsh `0.2.1-rc.2` / `0.2.1-rc.3`，同时适配桌面端与 `dsh web`）；
 dsh 0.2 收紧了插件契约，0.2.1 起还会按插件的 `peerDependencies` 逐条比对运行时版本 ——
 对不上的 bundle 会在启动时被**整个跳过**，旧版插件必须升级。
 
@@ -22,10 +22,10 @@ dsh 0.2 收紧了插件契约，0.2.1 起还会按插件的 `peerDependencies` �
 
 ```sh
 # Web（dsh web）
-dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.0    # 装完重启 dsh
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.1    # 装完重启 dsh
 
 # 桌面端（DeepSeek Harness 应用，profile 名为 desktop）
-"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.0
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.1
 ```
 
 > **桌面端安装**：桌面端自带一份 dsh 运行时，profile 名固定为 `desktop`
@@ -106,12 +106,15 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.0    # 装完重启
 
 ## 环境要求
 
-- dsh `0.2.1-rc.2`（桌面端应用与 `dsh web` 都在此列）。本插件按 0.2 契约重写：
+- dsh `0.2.1-rc.2` / `0.2.1-rc.3`（桌面端应用与 `dsh web` 都在此列）。本插件按 0.2 契约重写：
   槽位用"声明账本 + `slots.inject`"；会话导航走 `uiWorkspace.openSession`；
   会话状态统一读 `useSessionStatus`。**0.2.0-rc 及更早不再支持**。
-- 兼容性由 `package.json` 的 `peerDependencies` 声明（本版全部为 `0.2.1-rc.2`）。
+- 兼容性由 `package.json` 的 `peerDependencies` 声明（本版为
+  `0.2.1-rc.2 || 0.2.1-rc.3`，两个运行时的客户端契约已逐项核对；devDependencies 固定 rc.3）。
   0.2.1 起 dsh 会在加载前逐条比对运行时版本，不匹配时直接跳过整个 bundle
-  （CLI 报 `skipping profile bundle "dsh-myagent"`）——升级 dsh 后必须同步升级本插件。
+  （CLI 报 `skipping profile bundle "dsh-myagent"`）——升级 dsh 大版本后必须同步升级本插件。
+  用 `||` 列出两个 rc，是为了让「先装插件、后点应用更新」和「先更新应用、后装插件」
+  两种顺序都不会把插件跳过。
 - 构建与测试：Node.js ≥ 22.13（测试直接运行 TypeScript）+ npm
 - 安装仓库版无需构建：`lib/` 构建产物已提交
 - 冒烟脚本 `npm run smoke` 需要能找到本机 dsh 的 `@deepseek-ai/dsh-app-boot`；找不到时用环境变量指定
@@ -158,12 +161,12 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.0    # 装完重启
 > 判据是**本插件自有属性**，不猜任何官方哈希；浏览器不支持 `:has()` 时两组都不生效 →
 > 退回官方布局。
 
-### 底栏最终形态（v0.3.0）
+### 底栏最终形态（v0.3.1）
 
 底栏被压到 **36px**（原官方 64px），把纵向空间尽量留给「工作区」与「区文件树」两棵树；
 一行里横向依次是 `[头像 + 用户名] … [全局面板图标…] [MA]`，**所有元素严格纵向居中**。
 
-四个容易踩的点，都已在源码注释里留下换算式：
+六个容易踩的点，都已在源码注释里留下换算式：
 
 1. **官方全局面板入口被搬进底栏**。它们不是本插件渲染的，而是官方的
    `nav.<hash>panelList > button.<hash>panelRow`，与 `footArea` 是**兄弟节点** ——
@@ -173,12 +176,23 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.0    # 装完重启
 2. **0.2.1 起官方有两个全局面板**（`插件` + `自动化任务`，后者来自
    `dsh-client-ui-schedule`）。panelList 必须**横排**并钉死 24px 高：官方本身是纵排，
    两行时会向上长成 52px，第一个图标悬在底栏上方 28px、压住区文件树（0.2.1 实测）。
-3. **让位宽度必须覆盖底栏右侧所有键**，且随面板数增长：
-   `padding-right = 32 + 28N`（N=1 → 60px，N=2 → 88px；每多一个图标 = 24px + 4px 间距）。
+3. **rc.3 起默认是三个入口**：除上面两个，`dsh-client-ui-entry-customization` 会注册
+   `sidebar.panellist.actions`，于是 panelList 末尾多一个「更多」菜单按钮，而它的外面包了
+   一层 Menu 锚点 `span`（`moreAnchor`）——**不再是 `panelRow` 的直接子元素**。
+   让位阶梯因此不能按 `[class*="panelRow"]` 数，必须数 `nav` 的**全部直接子元素**
+   （`nav > :nth-child(n)`）；否则第 3 档不命中、padding 停在 88px，账号行右缘会压住
+   「插件」22px（rc.3 实测）。
+4. **让位宽度必须覆盖底栏右侧所有键**，且随面板数增长：
+   `padding-right = 32 + 28N`（N=1 → 60px，N=2 → 88px，N=3 → 116px；每多一个图标 = 24px + 4px 间距）。
    只按 MA 算（28px）会让用户名的**点击区与 hover 底色压到面板图标下面**。
    档位用 `nth-child(2..4)` 的选择器阶梯写死；官方以后再加面板，补一档即可。
-4. **`footArea` 的 1px 上边框不参与居中计算**，所以 padding 必须写成
+5. **`footArea` 的 1px 上边框不参与居中计算**，所以 padding 必须写成
    `5px 0 6px` 而不是对称值，否则整条内容行会下移 0.5px。
+6. **官方「新版本」按钮的 Tooltip 不能被账号行的归零规则吞掉**（v0.3.1 修）。
+   Tooltip 气泡是 `triggerRow` 的**直接子元素**、自身 `position:fixed`；底栏归零规则里的
+   `*` 若把气泡改成 `static`，气泡就变成 118px 宽的 flex 项：账号行从 200 挤到 74、
+   用户名截成「t…」、按钮左移 126px —— 鼠标一碰就跳，看起来是两个按钮一起闪。
+   现在规则显式排除 `[role="tooltip"]`，只把气泡内部文字的行高还原。
 
 ## 工作区分级（原生「工作区树」）
 
@@ -199,10 +213,10 @@ dsh 原生的工作区列表有「按工作区 / **按工作区树** / 单列表
 
 ```sh
 # Web（dsh web）—— 在线安装，推荐锁定版本标签
-dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.0
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.1
 
 # 桌面端 —— 用应用自带的 CLI 装进 desktop profile
-"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.0
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.1
 
 # 或本地源码目录（开发态）
 dsh plugin --profile web add ./dsh-myagent
@@ -220,7 +234,7 @@ dsh --profile web --dump-config          # 应出现 # == dsh-myagent 与插件�
 # "profile \"desktop\" is managed exclusively by the Electron application"）；
 # 改用安装器子命令查已装版本：
 "D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop list
-#   → dsh-myagent@0.3.0
+#   → dsh-myagent@0.3.1
 ```
 
 重启后在 GUI（侧栏**插件**页 / 设置 → 插件列表）可见 `dsh-myagent`，侧栏出现工作区 / 区文件树面板。

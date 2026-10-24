@@ -154,9 +154,16 @@ test("账号行让出的宽度必须覆盖底栏右侧所有键（从 CSS 里取
   // 要再放一个 24px 图标，让位必须跟着涨。这一档 0.2.1 实测漏过 —— 面板条横排是对的，
   // 但账号行只让 60px，用户名点击区仍会压到第二个图标下面。
   const twoPanelRule = RULES.find((r) =>
-    r.startsWith('div:has(> nav[class*="panelList"] > [class*="panelRow"]:nth-child(2))'),
+    r.startsWith('div:has(> nav[class*="panelList"] > :nth-child(2))'),
   );
   assert.ok(twoPanelRule, "两个全局面板时应有第二档让位规则");
+  // 0.2.1-rc.3 起第三个入口「更多」包在 Menu 锚点 span 里，不再是 panelRow 直接子元素。
+  // 档位必须数 nav 的全部直接子元素，否则第 3 档不命中（实测 padding 停在 88px，
+  // 账号行右缘压住「插件」22px）。这条断言锁住「不按类名数」。
+  assert.ok(
+    RULES.some((r) => r.startsWith('div:has(> nav[class*="panelList"] > :nth-child(3))')),
+    "第三档必须按 nav 直接子元素数（rc.3 的「更多」锚点 span 不含 panelRow 类名）",
+  );
   const reserved2 = px(twoPanelRule!, "padding-right");
   const needed2 = maWidth + pluginWidth * 2 + PANEL_GAP + MIN_CLEARANCE + TRIGGER_OVERHANG;
   assert.ok(
@@ -166,6 +173,21 @@ test("账号行让出的宽度必须覆盖底栏右侧所有键（从 CSS 里取
   );
   // 每多一个面板 = 一个图标宽 + 一个间距；两档必须正好差这么多（防止抄错常量）。
   assert.equal(reserved2 - reserved, pluginWidth + PANEL_GAP, "N=2 档应比 N=1 档正好多一个图标 + 一个间距");
+});
+
+test("triggerRow 的归零规则必须放走 tooltip 气泡（hover「新版本」时不能挤动账号行）", () => {
+  // 用户 2026-10 报：鼠标移到「新版本」上，按钮和用户按钮一起闪。
+  // 根因：官方 Tooltip 的气泡是 triggerRow 的**直接子元素**，自身是 position:fixed + 内联
+  // top/left；归零规则里的 * 把它改成 static，气泡立刻变成 118px 宽的 flex 项，把账号行
+  // 从 200 挤到 74px、按钮左移 126px —— 鼠标一碰就跳，看起来就是两个按钮一起闪。
+  // 真 Chrome 实测（.cache/probe-tooltip2.mjs）：修复前 pill 218→91.8、账号 200→73.8；
+  // 修复后 hover 前后都是 pill 218、账号 200，气泡 computed position 为 fixed。
+  const blanket = RULES.find((r) => r.includes('[class*="triggerRow"] :not([role="tooltip"])'));
+  assert.ok(blanket, "归零规则的 * 必须排除 role=tooltip 的气泡");
+  assert.ok(blanket.includes("position:static!important"), "归零规则应仍保留原有的 !important 归一");
+  const restore = RULES.find((r) => r.includes('[role="tooltip"] *') && r.includes("height:auto!important"));
+  assert.ok(restore, "tooltip 内部文字应恢复 height:auto（否则气泡会被压成 24px 行高）");
+  assert.equal(CSS.includes('[role="tooltip"]{'), false, "不得给气泡本身写死定位（应让官方 position:fixed 生效）");
 });
 
 test("底栏整体压缩：行高压到 24px（头像下限），且只收纵向留白不动横向几何", () => {
@@ -239,7 +261,7 @@ test("多面板让位阶梯只作用于账号 launcher 分支（否定门挂在�
     }
     return false;
   };
-  const rungs = RULES.filter((r) => r.startsWith('div:has(> nav[class*="panelList"] > [class*="panelRow"]:nth-child('));
+  const rungs = RULES.filter((r) => r.startsWith('div:has(> nav[class*="panelList"] > :nth-child('));
   assert.ok(rungs.length >= 2, `应有多面板档位（至少 N=2、N=3），实际 ${rungs.length}`);
   for (const rule of rungs) {
     const selector = rule.slice(0, rule.indexOf("{"));

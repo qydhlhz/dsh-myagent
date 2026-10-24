@@ -84,7 +84,14 @@ const CSS = `
    未知，靠常规优先级打不过它，而这几个属性本来就是我们要强行统一的表现层属性，
    且账号菜单本体是 portal 到 body 的，不受这里影响。 */
 [class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="settingsArea"] [class*="triggerRow"],
-[class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="settingsArea"] [class*="triggerRow"] *{box-sizing:border-box;height:24px;min-height:0;position:static!important;top:auto!important;bottom:auto!important;margin-top:0!important;margin-bottom:0!important;transform:none!important;align-self:center}
+[class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="settingsArea"] [class*="triggerRow"] :not([role="tooltip"]){box-sizing:border-box;height:24px;min-height:0;position:static!important;top:auto!important;bottom:auto!important;margin-top:0!important;margin-bottom:0!important;transform:none!important;align-self:center}
+/* 2026-10-24（用户报「鼠标移到『新版本』上会和用户按钮一起闪」）：官方 Tooltip 的气泡
+   是 triggerRow 的**直接子元素**，自身是 position:fixed + 内联 left/top。上面那条 * 规则
+   会把气泡改成 static，气泡于是变成 flex 项（118px 宽）挤进账号行：账号宽度从 200 缩到
+   74、用户名被截成「t…」，按钮本身也被向左顶 126px —— 鼠标一碰就跳，看起来就是两个
+   按钮一起闪。这里排除 role=tooltip 的气泡（保持官方 fixed 定位、不参与布局），
+   气泡内部文字再恢复自适应行高（否则会被上面那条压成 24px）。 */
+[class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="settingsArea"] [class*="triggerRow"] [role="tooltip"] *{height:auto!important;min-height:0}
 /* 行高压缩**必须带门**：席位被第三方 launcher 占用时（既不是本插件的单图标 trigger，
    也不是官方账号行）我们一概不碰 —— 那条规则原本就是为了防"压扁别人的控件"而立的，
    这里同样遵守。两个门各写一遍，方向与下面各自的紧凑布局一致。 */
@@ -195,14 +202,19 @@ nav[class*="panelList"] [class*="panelTitle"]{display:none}
    N=2 让 88px 后：面板条在 188..240（插件 188..212、自动化任务 216..240），
    triggerRow 右缘 268−88+2 = 182 → 留 6px 净空。 */
 [class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="settingsArea"]{box-sizing:border-box;padding-right:60px}
-/* N≥2 时按 panelList 的子项数抬升让位宽度。判据用 nth-child（DOM 顺序固定），
+/* N≥2 时按 panelList 的直接子元素数抬升让位宽度。判据用 nth-child（DOM 顺序固定），
    不用 :has(nav ...) 数总数 —— CSS 没有 sibling-count 可用。
+   ⚠️ 0.2.1-rc.3 起第 3 个入口「更多」外面多了一层 Menu 锚点 span（moreAnchor），
+   它不再是 [class*="panelRow"] 的直接子元素。若继续按 panelRow 数，第 3 档永远不命中，
+   让位停在 88px：280 宽时账号行右缘 182、面板条左缘 160，直接压住「插件」22px
+   （实测；用户报的「新版本按钮和其他冲突」在 rc.3 上就是这个形态）。
+   所以这里数 nav 的**全部直接子元素**，不限定类名。
    ⚠️ 门必须挂在**主语**上（settingsArea:not(:has(trigger))），不能写成
    :has(> [class*="footArea"]:not(:has(...))) —— :has() 里嵌套 :has() 是无效选择器
    （实测 Chrome 直接判定整条规则无效，padding 仍是 60px）。 */
-div:has(> nav[class*="panelList"] > [class*="panelRow"]:nth-child(2)) [class*="settingsArea"]:not(:has([data-fm-settings-trigger])){padding-right:88px}
-div:has(> nav[class*="panelList"] > [class*="panelRow"]:nth-child(3)) [class*="settingsArea"]:not(:has([data-fm-settings-trigger])){padding-right:116px}
-div:has(> nav[class*="panelList"] > [class*="panelRow"]:nth-child(4)) [class*="settingsArea"]:not(:has([data-fm-settings-trigger])){padding-right:144px}
+div:has(> nav[class*="panelList"] > :nth-child(2)) [class*="settingsArea"]:not(:has([data-fm-settings-trigger])){padding-right:88px}
+div:has(> nav[class*="panelList"] > :nth-child(3)) [class*="settingsArea"]:not(:has([data-fm-settings-trigger])){padding-right:116px}
+div:has(> nav[class*="panelList"] > :nth-child(4)) [class*="settingsArea"]:not(:has([data-fm-settings-trigger])){padding-right:144px}
 [class*="footArea"]:not(:has([data-fm-settings-trigger])) [class*="footerActions"]{position:absolute;right:0;top:auto;bottom:6px;transform:none;width:auto;min-width:0;padding-left:0;align-items:center}
 /* ↑ 用 bottom:6px 而不是 top:50% + translateY(-50%)：底栏有 1px 上边框，padding box 的
    50% 落在 876.5，而内容行的中心是 876 —— 实测 MA 因此比其余三个键低 0.5px。
