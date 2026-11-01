@@ -16,7 +16,7 @@ official preview** and takes over the left sidebar: it merges the three-level li
 It also ships **Butler**, an agent with no chat window of its own: it reads your
 conversations and maintains your workspace groups, titles and briefs for you.
 
-Version numbers track dsh (this release **v0.3.1** ↔ dsh `0.2.1-rc.2` / `0.2.1-rc.3`, covering both the desktop app
+Version numbers track dsh (this release **v0.3.2** ↔ dsh `0.2.1-rc.2` / `0.2.1-rc.3` / `0.2.1-rc.4` / `0.2.1-rc.5`, covering both the desktop app
 and `dsh web`); dsh 0.2 tightened the plugin contract, and since 0.2.1 the loader also compares the
 plugin's `peerDependencies` against the runtime version — a mismatch makes it **skip the whole
 bundle** at startup, so older builds must be upgraded.
@@ -26,10 +26,10 @@ dependencies; `lib/` is committed — install and go:
 
 ```sh
 # Web (dsh web)
-dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.1    # restart dsh afterwards
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.2    # restart dsh afterwards
 
 # Desktop app (DeepSeek Harness; its profile is named `desktop`)
-"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.1
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.2
 ```
 
 > **Desktop install**: the desktop app bundles its own dsh runtime, and its profile is always
@@ -89,14 +89,15 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.1    # restart dsh 
 
 ## Requirements
 
-- dsh `0.2.1-rc.2` / `0.2.1-rc.3` (covers both the desktop app and `dsh web`). This plugin is written
+- dsh `0.2.1-rc.2` / `0.2.1-rc.3` / `0.2.1-rc.4` / `0.2.1-rc.5` (covers both the desktop app and `dsh web`). This plugin is written
   against the 0.2 contract: slots use the "declared ledger + `slots.inject`" model; session navigation
   goes through `uiWorkspace.openSession`; session state is read from `useSessionStatus`.
   **0.2.0-rc and older are no longer supported.**
 - Compatibility is declared through `peerDependencies` (this release:
-  `0.2.1-rc.2 || 0.2.1-rc.3`; the client contracts of both runtimes were checked item by item, and
-  devDependencies pin rc.3). Since 0.2.1, dsh compares every declared dsh-package version against the
-  runtime before loading and skips the whole bundle on a mismatch
+  `0.2.1-rc.2 || 0.2.1-rc.3 || 0.2.1-rc.4 || 0.2.1-rc.5`; the public type declarations are
+  identical across all four runtimes, and the rc.3 → rc.4 → rc.5 client bundles differ only in
+  build-version strings; devDependencies pin rc.5). Since 0.2.1, dsh compares every declared
+  dsh-package version against the runtime before loading and skips the whole bundle on a mismatch
   (`skipping profile bundle "dsh-myagent"` in the CLI) — upgrading dsh across a major line therefore
   requires upgrading this plugin. The `||` range keeps the plugin loading whether you install it
   before or after clicking the app's update button.
@@ -212,10 +213,10 @@ official `folderPath` / `owningParentFolder` verbatim):
 
 ```sh
 # Web (dsh web) — from the GitHub source, recommended: pin a release tag
-dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.1
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.2
 
 # Desktop app — install into the `desktop` profile with the app's bundled CLI
-"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.1
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.2
 
 # Or a local source directory (development)
 dsh plugin --profile web add ./dsh-myagent
@@ -234,7 +235,7 @@ dsh --profile web --dump-config   # should contain "# == dsh-myagent" and the pl
 # --dump-config ("profile \"desktop\" is managed exclusively by the Electron application").
 # Use the installer subcommand to check the installed version instead:
 "D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop list
-#   → dsh-myagent@0.3.1
+#   → dsh-myagent@0.3.2
 ```
 
 After the restart you will see `dsh-myagent` under Settings → Plugins, and the sidebar shows the

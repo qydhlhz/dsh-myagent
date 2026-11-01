@@ -14,7 +14,7 @@ dsh 0.2 起官方内置了文件树与预览。本项目**保留官方预览**�
 MYAGENT 模式 / 标准模式**的按钮，随时还原官方界面。内置 **区管家** —— 一个不显示对话框的
 agent：读取各对话记忆，替你维护工作区分组，标题，简介。
 
-版本号与 dsh 一一对应（本版 **v0.3.1** ↔ dsh `0.2.1-rc.2` / `0.2.1-rc.3`，同时适配桌面端与 `dsh web`）；
+版本号与 dsh 一一对应（本版 **v0.3.2** ↔ dsh `0.2.1-rc.2` / `0.2.1-rc.3` / `0.2.1-rc.4` / `0.2.1-rc.5`，同时适配桌面端与 `dsh web`）；
 dsh 0.2 收紧了插件契约，0.2.1 起还会按插件的 `peerDependencies` 逐条比对运行时版本 ——
 对不上的 bundle 会在启动时被**整个跳过**，旧版插件必须升级。
 
@@ -22,10 +22,10 @@ dsh 0.2 收紧了插件契约，0.2.1 起还会按插件的 `peerDependencies` �
 
 ```sh
 # Web（dsh web）
-dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.1    # 装完重启 dsh
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.2    # 装完重启 dsh
 
 # 桌面端（DeepSeek Harness 应用，profile 名为 desktop）
-"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.1
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.2
 ```
 
 > **桌面端安装**：桌面端自带一份 dsh 运行时，profile 名固定为 `desktop`
@@ -106,14 +106,15 @@ dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.1    # 装完重启
 
 ## 环境要求
 
-- dsh `0.2.1-rc.2` / `0.2.1-rc.3`（桌面端应用与 `dsh web` 都在此列）。本插件按 0.2 契约重写：
+- dsh `0.2.1-rc.2` / `0.2.1-rc.3` / `0.2.1-rc.4` / `0.2.1-rc.5`（桌面端应用与 `dsh web` 都在此列）。本插件按 0.2 契约重写：
   槽位用"声明账本 + `slots.inject`"；会话导航走 `uiWorkspace.openSession`；
   会话状态统一读 `useSessionStatus`。**0.2.0-rc 及更早不再支持**。
 - 兼容性由 `package.json` 的 `peerDependencies` 声明（本版为
-  `0.2.1-rc.2 || 0.2.1-rc.3`，两个运行时的客户端契约已逐项核对；devDependencies 固定 rc.3）。
+  `0.2.1-rc.2 || 0.2.1-rc.3 || 0.2.1-rc.4 || 0.2.1-rc.5`；四个运行时的公开类型声明
+  逐包一致，rc.3→rc.4→rc.5 的客户端 bundle 只有构建版本号不同；devDependencies 固定 rc.5）。
   0.2.1 起 dsh 会在加载前逐条比对运行时版本，不匹配时直接跳过整个 bundle
   （CLI 报 `skipping profile bundle "dsh-myagent"`）——升级 dsh 大版本后必须同步升级本插件。
-  用 `||` 列出两个 rc，是为了让「先装插件、后点应用更新」和「先更新应用、后装插件」
+  用 `||` 列出多个 rc，是为了让「先装插件、后点应用更新」和「先更新应用、后装插件」
   两种顺序都不会把插件跳过。
 - 构建与测试：Node.js ≥ 22.13（测试直接运行 TypeScript）+ npm
 - 安装仓库版无需构建：`lib/` 构建产物已提交
@@ -213,10 +214,10 @@ dsh 原生的工作区列表有「按工作区 / **按工作区树** / 单列表
 
 ```sh
 # Web（dsh web）—— 在线安装，推荐锁定版本标签
-dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.1
+dsh plugin --profile web add github:qydhlhz/dsh-myagent#v0.3.2
 
 # 桌面端 —— 用应用自带的 CLI 装进 desktop profile
-"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.1
+"D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:qydhlhz/dsh-myagent#v0.3.2
 
 # 或本地源码目录（开发态）
 dsh plugin --profile web add ./dsh-myagent
@@ -234,7 +235,7 @@ dsh --profile web --dump-config          # 应出现 # == dsh-myagent 与插件�
 # "profile \"desktop\" is managed exclusively by the Electron application"）；
 # 改用安装器子命令查已装版本：
 "D:\DSH\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop list
-#   → dsh-myagent@0.3.1
+#   → dsh-myagent@0.3.2
 ```
 
 重启后在 GUI（侧栏**插件**页 / 设置 → 插件列表）可见 `dsh-myagent`，侧栏出现工作区 / 区文件树面板。
